@@ -1,0 +1,99 @@
+name: adbreak
+
+x-node-service: &node-service
+  build:
+    context: .
+    dockerfile: Dockerfile.node
+  volumes:
+    - ./packages:/app/packages
+  environment: &node-env
+    REDIS_URL: redis://redis:6379
+    ORIGIN_URL: http://origin
+    PACKAGER_URL: http://packager:3000
+    ADS_URL: http://ads:3000
+    SSAI_URL: http://ssai:3000
+    EDGE_URL: http://edge:3000
+    COLLECTOR_URL: http://beacon-collector:3000
+    PORT: "3000"
+  restart: unless-stopped
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  encoder:
+    build: plant/encoder
+    volumes:
+      - hls:/hls
+      - encoder-source:/source
+    restart: unless-stopped
+
+  origin:
+    image: nginx:1.27-alpine
+    volumes:
+      - hls:/hls:ro
+      - ./plant/origin/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports: ["8080:80"]
+    depends_on: [encoder]
+
+  playout:
+    <<: *node-service
+    command: ["npx", "tsx", "watch", "packages/playout/src/index.ts"]
+    volumes:
+      - ./packages:/app/packages
+      - ./schedules:/app/schedules:ro
+    ports: ["8087:3000"]
+    depends_on: [redis]
+
+  packager:
+    <<: *node-service
+    command: ["npx", "tsx", "watch", "packages/packager/src/index.ts"]
+    ports: ["8081:3000"]
+    depends_on: [redis, origin]
+
+  ads:
+    <<: *node-service
+    command: ["npx", "tsx", "watch", "packages/ads/src/index.ts"]
+    ports: ["8082:3000"]
+
+  ssai:
+    <<: *node-service
+    command: ["npx", "tsx", "watch", "packages/ssai/src/index.ts"]
+    ports: ["8083:3000"]
+    depends_on: [packager, ads]
+
+  edge:
+    <<: *node-service
+    command: ["npx", "tsx", "watch", "packages/edge/src/index.ts"]
+    ports: ["8084:3000"]
+    depends_on: [ssai, origin, beacon-collector]
+
+  player-fleet:
+    <<: *node-service
+    command: ["npx", "tsx", "watch", "packages/player-fleet/src/index.ts"]
+    environment:
+      <<: *node-env
+      SESSIONS: "200"
+    ports: ["8088:3000"]
+    depends_on: [edge]
+
+  beacon-collector:
+    <<: *node-service
+    command: ["npx", "tsx", "watch", "packages/beacon-collector/src/index.ts"]
+    volumes:
+      - ./packages:/app/packages
+      - ./data:/data
+    ports: ["8085:3000"]
+
+  chaos-injector:
+    <<: *node-service
+    command: ["npx", "tsx", "watch", "packages/chaos-injector/src/index.ts"]
+    volumes:
+      - ./packages:/app/packages
+      - ./data:/data
+    ports: ["8086:3000"]
+
+volumes:
+  hls:
+  encoder-source:

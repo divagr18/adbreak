@@ -1,0 +1,11 @@
+{
+  "name": "@adbreak/playout",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@adbreak/shared": "*",
+    "redis": "^4.7.0",
+    "yaml": "^2.6.0"
+  }
+}

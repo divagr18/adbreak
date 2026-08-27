@@ -1,0 +1,8 @@
+# Avail schedule for channel sports-1.
+# Phase A: a periodic break so the full chain exercises every ~2 minutes.
+channel: sports-1
+periodic:
+  every_s: 120        # a break starts every 2 minutes...
+  duration_s: 30      # ...lasting 30 seconds
+  break_type: mid_roll
+  lead_time_s: 8      # cue is emitted this many seconds before splice_time

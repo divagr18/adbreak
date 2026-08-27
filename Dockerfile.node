@@ -1,0 +1,19 @@
+# Shared image for all TypeScript plant services. Compose overrides CMD per
+# service: npx tsx watch packages/<svc>/src/index.ts
+# ./packages is bind-mounted in dev so code changes hot-reload without rebuild;
+# rebuild only when a package.json changes.
+FROM node:22-alpine
+WORKDIR /app
+COPY package.json tsconfig.base.json ./
+COPY packages/shared/package.json packages/shared/package.json
+COPY packages/playout/package.json packages/playout/package.json
+COPY packages/packager/package.json packages/packager/package.json
+COPY packages/ads/package.json packages/ads/package.json
+COPY packages/ssai/package.json packages/ssai/package.json
+COPY packages/edge/package.json packages/edge/package.json
+COPY packages/player-fleet/package.json packages/player-fleet/package.json
+COPY packages/beacon-collector/package.json packages/beacon-collector/package.json
+COPY packages/chaos-injector/package.json packages/chaos-injector/package.json
+RUN npm install --no-audit --no-fund
+COPY packages ./packages
+CMD ["npx", "tsx", "packages/playout/src/index.ts"]

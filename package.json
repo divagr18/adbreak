@@ -1,0 +1,25 @@
+{
+  "name": "adbreak",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Revenue SRE for live streaming — autonomous agent whose SLO is money per ad avail",
+  "license": "Apache-2.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc -b packages/shared packages/playout packages/packager packages/ads packages/ssai packages/edge packages/player-fleet packages/beacon-collector packages/chaos-injector",
+    "test": "vitest run",
+    "dev": "docker compose up --build"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
