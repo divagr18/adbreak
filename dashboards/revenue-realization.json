@@ -1,0 +1,203 @@
+{
+  "uid": "adbreak-revenue",
+  "title": "AdBreak — Revenue Realization",
+  "description": "The SLO that actually matters: did this avail earn what it should have earned? Every panel here is denominated in impressions or dollars.",
+  "tags": ["adbreak", "revenue", "slo"],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Revenue Realization Ratio (5m)",
+      "description": "realized / expected. The SLO is 0.98.",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.9 },
+              { "color": "green", "value": 0.98 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(adbreak_revenue_realized_usd_total[5m])) / clamp_min(sum(increase(adbreak_revenue_expected_usd_total[5m])), 0.000001)",
+          "legendFormat": "RRR"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Revenue lost (5m)",
+      "description": "Expected minus realized. This is the Revenue Loss Ledger.",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.01 },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(adbreak_revenue_expected_usd_total[5m])) - sum(increase(adbreak_revenue_realized_usd_total[5m]))",
+          "legendFormat": "leaked"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Worst impression gap (5m)",
+      "description": "Highest share of billable impressions never confirmed, across device x CDN.",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.05 },
+              { "color": "red", "value": 0.2 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[5m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[5m])), 1)))",
+          "legendFormat": "worst gap"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "RRR by device class — the cliff",
+      "description": "A single device class collapsing here, while delivery health stays green, is the signature failure this system exists to catch.",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1.05,
+          "custom": { "fillOpacity": 5, "lineWidth": 2 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 0.98 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (device_class) (increase(adbreak_revenue_realized_usd_total[5m])) / clamp_min(sum by (device_class) (increase(adbreak_revenue_expected_usd_total[5m])), 0.000001)",
+          "legendFormat": "{{device_class}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Expected vs realized revenue",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "custom": { "fillOpacity": 10 } } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(adbreak_revenue_expected_usd_total[5m]))",
+          "legendFormat": "expected"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(increase(adbreak_revenue_realized_usd_total[5m]))",
+          "legendFormat": "realized"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Impression gap by device x CDN",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[5m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[5m])), 1))",
+          "legendFormat": "{{device_class}} / {{cdn}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Ad decisioning — fill ratio",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 23 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1.05 } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg by (region) (adbreak_ads_fill_ratio)",
+          "legendFormat": "{{region}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Slate seconds (unsold inventory)",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 23 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason) (increase(adbreak_slate_seconds_total[5m]))",
+          "legendFormat": "{{reason}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "ADS response time p99",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 23 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum by (le, region) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{region}}"
+        }
+      ]
+    }
+  ]
+}
