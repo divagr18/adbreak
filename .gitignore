@@ -8,7 +8,6 @@ data/
 hls-data/
 *.log
 .DS_Store
-creatives/**/*.ts.seg
 plant/encoder/source/*.mp4
 
 spike/node_modules/

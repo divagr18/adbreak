@@ -1,6 +1,154 @@
-// ads: mock VAST 4.x ad decision server. Knobs: latency_ms, fill_rate.
-// Day 2: VAST XML pods + tracking URLs + admin knobs (F03/F04 hooks).
-import { createService } from '@adbreak/shared';
+// ads: mock VAST 4.x ad decision server.
+// The knobs here ARE the F03 (latency) and F04 (no-fill) chaos surface.
+import { readFileSync } from 'node:fs';
+import { Router } from 'express';
+import { BEACON_EVENTS, METRICS, createService } from '@adbreak/shared';
 
 const svc = createService('ads');
+const ADS_ID = process.env.ADS_ID ?? 'ads-1';
+const CATALOG_PATH = process.env.CATALOG_PATH ?? '/app/creatives/index.json';
+const BEACON_BASE = process.env.BEACON_BASE ?? 'http://edge:3000';
+const PUBLIC_MEDIA_BASE = process.env.PUBLIC_MEDIA_BASE ?? 'http://edge:3000';
+
+interface Creative {
+  id: string;
+  advertiser: string;
+  durationS: number;
+  playlist: string;
+}
+
+const catalog: Creative[] = JSON.parse(readFileSync(CATALOG_PATH, 'utf8').replace(/^﻿/, ''));
+svc.log.info('catalog loaded', { creatives: catalog.length });
+
+const knobs = {
+  latency_ms: Number(process.env.LATENCY_MS ?? 150),
+  jitter_ms: Number(process.env.JITTER_MS ?? 50),
+  fill_rate: Number(process.env.FILL_RATE ?? 1),
+};
+
+const adsRequest = svc.counter(METRICS.adsRequest);
+const adsDuration = svc.histogram(METRICS.adsResponseDuration);
+const adsPodDuration = svc.gauge(METRICS.adsPodDuration);
+const adsFillRatio = svc.gauge(METRICS.adsFillRatio);
+
+/** Rolling fill accounting per region, so the gauge reflects recent behaviour. */
+const fill = new Map<string, { requested: number; filled: number }>();
+function recordFill(region: string, requested: number, filled: number): void {
+  const acc = fill.get(region) ?? { requested: 0, filled: 0 };
+  // Decay keeps the ratio responsive when a fault starts or clears.
+  acc.requested = acc.requested * 0.9 + requested;
+  acc.filled = acc.filled * 0.9 + filled;
+  fill.set(region, acc);
+  adsFillRatio.set({ ads: ADS_ID, region }, acc.requested > 0 ? acc.filled / acc.requested : 0);
+}
+
+/** Greedy pack: largest creative that still fits, repeated. */
+function buildPod(availS: number): Creative[] {
+  const pod: Creative[] = [];
+  let remaining = availS;
+  const sorted = [...catalog].sort((a, b) => b.durationS - a.durationS);
+  for (;;) {
+    const next = sorted.find((c) => c.durationS <= remaining);
+    if (!next) break;
+    pod.push(next);
+    remaining -= next.durationS;
+  }
+  return pod;
+}
+
+const xmlEscape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+function trackingUrl(event: string, session: string, availId: string, creativeId: string): string {
+  const q = new URLSearchParams({ event, session, availId, creative: creativeId });
+  return xmlEscape(`${BEACON_BASE}/beacon?${q.toString()}`);
+}
+
+function hhmmss(totalS: number): string {
+  const h = Math.floor(totalS / 3600);
+  const m = Math.floor((totalS % 3600) / 60);
+  const s = Math.floor(totalS % 60);
+  return [h, m, s].map((n) => String(n).padStart(2, '0')).join(':');
+}
+
+function renderVast(pod: Creative[], session: string, availId: string): string {
+  if (pod.length === 0) return '<?xml version="1.0" encoding="UTF-8"?>\n<VAST version="4.0"/>';
+  const ads = pod
+    .map((c, i) => {
+      const tracking = BEACON_EVENTS.map(
+        (e) =>
+          `          <Tracking event="${e}"><![CDATA[${trackingUrl(e, session, availId, c.id)}]]></Tracking>`,
+      ).join('\n');
+      return `  <Ad id="${c.id}" sequence="${i + 1}">
+    <InLine>
+      <AdSystem version="1.0">adbreak-ads</AdSystem>
+      <AdTitle><![CDATA[${c.advertiser}]]></AdTitle>
+      <Advertiser><![CDATA[${c.advertiser}]]></Advertiser>
+      <Creatives>
+        <Creative id="${c.id}" adId="${c.id}">
+          <Linear>
+            <Duration>${hhmmss(c.durationS)}</Duration>
+            <TrackingEvents>
+${tracking}
+            </TrackingEvents>
+            <MediaFiles>
+              <MediaFile delivery="streaming" type="application/x-mpegURL" width="1280" height="720">
+                <![CDATA[${PUBLIC_MEDIA_BASE}${c.playlist}]]>
+              </MediaFile>
+            </MediaFiles>
+          </Linear>
+        </Creative>
+      </Creatives>
+    </InLine>
+  </Ad>`;
+    })
+    .join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<VAST version="4.0">\n${ads}\n</VAST>`;
+}
+
+svc.app.get('/vast', async (req, res) => {
+  const started = process.hrtime.bigint();
+  const availId = String(req.query.availId ?? 'unknown');
+  const session = String(req.query.session ?? 'unknown');
+  const region = String(req.query.region ?? 'unknown');
+  const deviceClass = String(req.query.device_class ?? 'unknown');
+  const availS = Number(req.query.dur ?? 30);
+
+  adsRequest.inc({ ads: ADS_ID, region, device_class: deviceClass });
+
+  const delay = knobs.latency_ms + Math.random() * knobs.jitter_ms;
+  await new Promise((r) => setTimeout(r, delay));
+
+  const noFill = Math.random() >= knobs.fill_rate;
+  const pod = noFill ? [] : buildPod(availS);
+  const podS = pod.reduce((sum, c) => sum + c.durationS, 0);
+
+  adsPodDuration.set({ ads: ADS_ID, region }, podS);
+  recordFill(region, availS, podS);
+  adsDuration.observe(
+    { ads: ADS_ID, region },
+    Number(process.hrtime.bigint() - started) / 1e9,
+  );
+
+  svc.log.info(noFill ? 'no-fill (F04)' : 'pod returned', {
+    avail_id: availId,
+    session_id: session,
+    pod_duration_s: podS,
+    avail_duration_s: availS,
+    creatives: pod.map((c) => c.id),
+  });
+
+  res.type('application/xml').send(renderVast(pod, session, availId));
+});
+
+const admin = Router();
+admin.get('/knobs', (_req, res) => res.json(knobs));
+admin.post('/knobs', (req, res) => {
+  for (const k of ['latency_ms', 'jitter_ms', 'fill_rate'] as const) {
+    if (req.body?.[k] !== undefined) knobs[k] = Number(req.body[k]);
+  }
+  svc.log.warn('knobs updated', { ...knobs });
+  res.json(knobs);
+});
+svc.admin(admin);
+
 svc.start(Number(process.env.PORT ?? 3000));

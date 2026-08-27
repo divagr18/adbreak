@@ -13,6 +13,8 @@ export interface CueMessage {
   /** Break duration in seconds. */
   durationS: number;
   breakType: BreakType;
+  /** SCTE-35 splice_insert (out_of_network) payload, hex. */
+  scte35Out: string;
 }
 
 export function availId(channel: string, spliceTime: Date): string {

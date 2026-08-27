@@ -1,0 +1,14 @@
+[
+    {
+        "id":  "ad-a",
+        "advertiser":  "Northwind Beverages",
+        "durationS":  12,
+        "playlist":  "/hls/creatives/ad-a/playlist.m3u8"
+    },
+    {
+        "id":  "ad-b",
+        "advertiser":  "Contoso Motors",
+        "durationS":  16,
+        "playlist":  "/hls/creatives/ad-b/playlist.m3u8"
+    }
+]
