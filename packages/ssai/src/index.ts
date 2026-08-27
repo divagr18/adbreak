@@ -19,6 +19,7 @@ import {
   impressionValueUsd,
   parseCueWindows,
   parsePlaylist,
+  sampled,
   serialize,
   type CueWindow,
 } from '@adbreak/shared';
@@ -42,11 +43,7 @@ const SESSION_TTL_MS = 5 * 60_000;
  */
 const SPAN_SAMPLE = Number(process.env.SPAN_SAMPLE ?? 0.02);
 
-function isTraced(sessionId: string): boolean {
-  let h = 0;
-  for (let i = 0; i < sessionId.length; i++) h = (h * 31 + sessionId.charCodeAt(i)) >>> 0;
-  return (h % 10_000) / 10_000 < SPAN_SAMPLE;
-}
+const isTraced = (sessionId: string): boolean => sampled(sessionId, SPAN_SAMPLE);
 
 const availDecided = svc.counter(METRICS.availDecided);
 const slateSeconds = svc.counter(METRICS.slateSeconds);
