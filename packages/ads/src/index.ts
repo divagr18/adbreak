@@ -42,25 +42,46 @@ function recordFill(region: string, requested: number, filled: number): void {
   adsFillRatio.set({ ads: ADS_ID, region }, acc.requested > 0 ? acc.filled / acc.requested : 0);
 }
 
-/** Greedy pack: largest creative that still fits, repeated. */
+/**
+ * Greedy pack, largest first, preferring creatives not already in the pod —
+ * real ad servers apply competitive separation rather than running the same
+ * spot twice back to back. Any unsold tail is left for the SSAI to slate.
+ */
 function buildPod(availS: number): Creative[] {
   const pod: Creative[] = [];
+  const used = new Set<string>();
   let remaining = availS;
   const sorted = [...catalog].sort((a, b) => b.durationS - a.durationS);
   for (;;) {
-    const next = sorted.find((c) => c.durationS <= remaining);
+    const next =
+      sorted.find((c) => c.durationS <= remaining && !used.has(c.id)) ??
+      sorted.find((c) => c.durationS <= remaining);
     if (!next) break;
     pod.push(next);
+    used.add(next.id);
     remaining -= next.durationS;
   }
   return pod;
 }
 
-const xmlEscape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-
-function trackingUrl(event: string, session: string, availId: string, creativeId: string): string {
-  const q = new URLSearchParams({ event, session, availId, creative: creativeId });
-  return xmlEscape(`${BEACON_BASE}/beacon?${q.toString()}`);
+/** No XML escaping here: these URLs are emitted inside CDATA, which is by
+ *  definition unparsed. Escaping them turns every `&` into a literal `&amp;`
+ *  and silently corrupts the query string the beacon collector receives. */
+function trackingUrl(
+  event: string,
+  session: string,
+  availId: string,
+  creativeId: string,
+  pos: number,
+): string {
+  const q = new URLSearchParams({
+    event,
+    session,
+    availId,
+    creative: creativeId,
+    pos: String(pos),
+  });
+  return `${BEACON_BASE}/beacon?${q.toString()}`;
 }
 
 function hhmmss(totalS: number): string {
@@ -76,7 +97,7 @@ function renderVast(pod: Creative[], session: string, availId: string): string {
     .map((c, i) => {
       const tracking = BEACON_EVENTS.map(
         (e) =>
-          `          <Tracking event="${e}"><![CDATA[${trackingUrl(e, session, availId, c.id)}]]></Tracking>`,
+          `          <Tracking event="${e}"><![CDATA[${trackingUrl(e, session, availId, c.id, i)}]]></Tracking>`,
       ).join('\n');
       return `  <Ad id="${c.id}" sequence="${i + 1}">
     <InLine>

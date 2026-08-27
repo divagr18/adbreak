@@ -76,10 +76,17 @@ describe('injectMarkers', () => {
     expect(a.playlist).toBe(b.playlist);
   });
 
-  it('ignores a cue that has not entered the window', () => {
+  it('announces a future cue in the header, without CUE-OUT', () => {
+    // SSAI needs lead time to call the ad server, so a break beyond the live
+    // window is advertised with a future START-DATE. It is not "manifested"
+    // until the real segment boundary carries CUE-OUT.
     const src = makePlaylist(T0, 10);
     const { playlist, manifested } = injectMarkers(src, [cue(T0 + 100_000)]);
-    expect(playlist).toBe(src);
+    const lines = playlist.split('\n');
+    const drIdx = lines.findIndex((l) => l.startsWith('#EXT-X-DATERANGE'));
+    expect(drIdx).toBeGreaterThanOrEqual(0);
+    expect(drIdx).toBeLessThan(lines.findIndex((l) => l.startsWith('#EXTINF')));
+    expect(lines.some((l) => l.startsWith('#EXT-X-CUE-OUT'))).toBe(false);
     expect(manifested).toEqual([]);
   });
 

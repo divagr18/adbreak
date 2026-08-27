@@ -15,8 +15,11 @@ x-node-service: &node-service
     SSAI_URL: http://ssai:3000
     EDGE_URL: http://edge:3000
     COLLECTOR_URL: http://beacon-collector:3000
-    BEACON_BASE: http://localhost:8084
-    PUBLIC_MEDIA_BASE: http://localhost:8084
+    # Beacons are fired by the fleet from inside the network, so these must be
+    # container-resolvable. Manifest/segment URLs are path-absolute instead, so
+    # the same personalized manifest plays for the fleet and for VLC on the host.
+    BEACON_BASE: http://edge:3000
+    PUBLIC_MEDIA_BASE: ""
     PORT: "3000"
   restart: unless-stopped
 

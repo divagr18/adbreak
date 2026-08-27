@@ -11,7 +11,11 @@ $font = '/usr/share/fonts/dejavu/DejaVuSans.ttf'
 
 $ads = @(
   @{ id = 'ad-a'; advertiser = 'Northwind Beverages'; seconds = 12; color = '0x1a3d7c'; label = 'ADBREAK AD A' },
-  @{ id = 'ad-b'; advertiser = 'Contoso Motors';      seconds = 16; color = '0x7c1a2f'; label = 'ADBREAK AD B' }
+  @{ id = 'ad-b'; advertiser = 'Contoso Motors';      seconds = 16; color = '0x7c1a2f'; label = 'ADBREAK AD B' },
+  # Filler for the unsold tail of a pod. Deliberately NOT in index.json, so the
+  # ad server can never sell it — the SSAI inserts it and books the seconds as
+  # slate (the F09 underfill signal).
+  @{ id = 'slate'; advertiser = '';                   seconds = 4;  color = '0x101010'; label = 'ADVERTISING WILL RESUME' }
 )
 
 foreach ($ad in $ads) {
@@ -32,8 +36,8 @@ foreach ($ad in $ads) {
     "/out/$($ad.id)/playlist.m3u8"
 }
 
-# Catalog consumed by the ad-decision-server.
-$catalog = $ads | ForEach-Object {
+# Catalog consumed by the ad-decision-server (sellable inventory only).
+$catalog = $ads | Where-Object { $_.advertiser } | ForEach-Object {
   [pscustomobject]@{
     id         = $_.id
     advertiser = $_.advertiser
