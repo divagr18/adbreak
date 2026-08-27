@@ -5,7 +5,7 @@ startTracing('ads');
 
 import { readFileSync } from 'node:fs';
 import { Router } from 'express';
-import { BEACON_EVENTS, METRICS, createService } from '@adbreak/shared';
+import { BEACON_EVENTS, METRICS, createService, exemplarLabels } from '@adbreak/shared';
 
 const svc = createService('ads');
 const ADS_ID = process.env.ADS_ID ?? 'ads-1';
@@ -152,10 +152,20 @@ svc.app.get('/vast', async (req, res) => {
 
   adsPodDuration.set({ ads: ADS_ID, region }, podS);
   recordFill(region, availS, podS);
-  adsDuration.observe(
-    { ads: ADS_ID, region },
-    Number(process.hrtime.bigint() - started) / 1e9,
-  );
+  // Exemplar on the latency histogram: a p99 spike on the dashboard becomes a
+  // click through to the trace of the avail that caused it. This is the jump
+  // an F03 investigation starts with.
+  const elapsedS = Number(process.hrtime.bigint() - started) / 1e9;
+  const exemplar = exemplarLabels();
+  if (exemplar) {
+    adsDuration.observe({
+      labels: { ads: ADS_ID, region },
+      value: elapsedS,
+      exemplarLabels: exemplar,
+    });
+  } else {
+    adsDuration.observe({ ads: ADS_ID, region }, elapsedS);
+  }
 
   svc.log.info(noFill ? 'no-fill (F04)' : 'pod returned', {
     avail_id: availId,

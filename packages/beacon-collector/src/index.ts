@@ -11,6 +11,7 @@ import {
   METRICS,
   contextFromTraceparent,
   createService,
+  exemplarLabels,
   impressionValueUsd,
   tracer,
 } from '@adbreak/shared';
@@ -49,7 +50,10 @@ interface AvailStats {
 }
 const stats = new Map<string, AvailStats>();
 
-function record(q: Record<string, string>): boolean {
+function record(
+  q: Record<string, string>,
+  exemplar?: { traceId: string; spanId: string },
+): boolean {
   const key = `${q.session}|${q.availId}|${q.pos}|${q.creative}|${q.event}`;
   if (seen.has(key)) return false;
   seen.add(key);
@@ -68,13 +72,20 @@ function record(q: Record<string, string>): boolean {
   };
   appendFileSync(LEDGER_PATH, JSON.stringify(entry) + '\n');
 
-  beaconFired.inc({
+  const firedLabels = {
     event: q.event,
     device_class: q.device_class,
     cdn: q.cdn,
     isp: q.isp,
     region: q.region,
-  });
+  };
+  // With an exemplar attached, a gap on the impression panel links straight to
+  // the trace of the break that produced it.
+  if (exemplar) {
+    beaconFired.inc({ labels: firedLabels, value: 1, exemplarLabels: exemplar });
+  } else {
+    beaconFired.inc(firedLabels);
+  }
 
   // The impression beacon is the billing record: this line, and only this
   // line, is where money is recognised as earned.
@@ -111,35 +122,39 @@ svc.app.all('/beacon', (req, res) => {
   }
   // Only sampled sessions carry a traceparent (the SSAI decides); its absence
   // is the signal not to trace, which keeps a break's trace readable.
+  let exemplar: { traceId: string; spanId: string } | undefined;
   if (q.tp) {
-    tracer()
-      .startSpan(
-        'beacon.fire',
-        {
-          attributes: {
-            event: q.event,
-            avail_id: q.availId,
-            creative: q.creative,
-            device_class: q.device_class ?? 'unknown',
-            ack_status: 204,
-          },
+    const span = tracer().startSpan(
+      'beacon.fire',
+      {
+        attributes: {
+          event: q.event,
+          avail_id: q.availId,
+          creative: q.creative,
+          device_class: q.device_class ?? 'unknown',
+          ack_status: 204,
         },
-        contextFromTraceparent(q.tp),
-      )
-      .end();
+      },
+      contextFromTraceparent(q.tp),
+    );
+    exemplar = exemplarLabels(span);
+    span.end();
   }
 
-  const fresh = record({
-    event: q.event,
-    session: q.session,
-    availId: q.availId,
-    creative: q.creative,
-    pos: q.pos ?? '0',
-    device_class: q.device_class ?? 'unknown',
-    cdn: q.cdn ?? 'unknown',
-    isp: q.isp ?? 'unknown',
-    region: q.region ?? 'unknown',
-  });
+  const fresh = record(
+    {
+      event: q.event,
+      session: q.session,
+      availId: q.availId,
+      creative: q.creative,
+      pos: q.pos ?? '0',
+      device_class: q.device_class ?? 'unknown',
+      cdn: q.cdn ?? 'unknown',
+      isp: q.isp ?? 'unknown',
+      region: q.region ?? 'unknown',
+    },
+    exemplar,
+  );
   res.status(fresh ? 204 : 200).end();
 });
 

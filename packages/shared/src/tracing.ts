@@ -95,4 +95,18 @@ export async function inSpan<T>(
   }
 }
 
+/**
+ * Exemplar labels for the currently-active span, or undefined when nothing is
+ * being traced. Attaching these to a counter or histogram is what lets a spike
+ * on a Grafana panel jump straight to the trace of the avail behind it — the
+ * metric -> exemplar -> trace -> log path the RCA depends on.
+ */
+export function exemplarLabels(span?: Span): { traceId: string; spanId: string } | undefined {
+  const active = span ?? trace.getSpan(context.active());
+  if (!active) return undefined;
+  const c = active.spanContext();
+  if (!c.traceId || c.traceId === '0'.repeat(32)) return undefined;
+  return { traceId: c.traceId, spanId: c.spanId };
+}
+
 export { SpanStatusCode, context, trace, type Span };

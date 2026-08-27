@@ -83,20 +83,36 @@ async function provisionAlert(): Promise<void> {
     annotations: {
       summary: 'Revenue realization below 0.98 — ad inventory is being served but not earning.',
       description:
-        'RRR = realized/expected over 5m. Delivery health can be perfectly green while this fires; that is the point.',
+        'RRR = realized/expected over 15m, per channel/region/device class. Delivery health can be perfectly green while this fires; that is the point.',
     },
     condition: 'C',
     data: [
       {
+        // 15m, per the stated SLO. A shorter window makes the ratio flap:
+        // expected revenue is booked when the pod is decided, but the matching
+        // impressions only land over the following ~45s, so a window holding a
+        // partial break reads artificially low.
         refId: 'A',
-        relativeTimeRange: { from: 600, to: 0 },
+        relativeTimeRange: { from: 1800, to: 0 },
         datasourceUid: PROM_UID,
         model: {
           refId: 'A',
           editorMode: 'code',
-          instant: true,
-          range: false,
-          expr: 'sum by (channel, region, device_class) (increase(adbreak_revenue_realized_usd_total[5m])) / (sum by (channel, region, device_class) (increase(adbreak_revenue_expected_usd_total[5m])) > 0)',
+          instant: false,
+          range: true,
+          expr: 'sum by (channel, region, device_class) (increase(adbreak_revenue_realized_usd_total[15m])) / (sum by (channel, region, device_class) (increase(adbreak_revenue_expected_usd_total[15m])) > 0)',
+        },
+      },
+      {
+        refId: 'B',
+        datasourceUid: '__expr__',
+        model: {
+          refId: 'B',
+          type: 'reduce',
+          datasource: { type: '__expr__', uid: '__expr__' },
+          expression: 'A',
+          reducer: 'last',
+          settings: { mode: 'dropNN' },
         },
       },
       {
@@ -106,8 +122,16 @@ async function provisionAlert(): Promise<void> {
           refId: 'C',
           type: 'threshold',
           datasource: { type: '__expr__', uid: '__expr__' },
-          expression: 'A',
-          conditions: [{ evaluator: { type: 'lt', params: [0.98] } }],
+          expression: 'B',
+          conditions: [
+            {
+              type: 'query',
+              evaluator: { type: 'lt', params: [0.98] },
+              operator: { type: 'and' },
+              query: { params: ['B'] },
+              reducer: { type: 'last', params: [] },
+            },
+          ],
         },
       },
     ],
