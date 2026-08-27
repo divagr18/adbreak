@@ -67,10 +67,9 @@ async function provisionDashboards(): Promise<void> {
  */
 async function provisionAlert(): Promise<void> {
   const folderUid = 'adbreak';
-  try {
+  const folders = (await api('/api/folders', 'GET')) as { uid: string }[];
+  if (!folders.some((f) => f.uid === folderUid)) {
     await api('/api/folders', 'POST', { uid: folderUid, title: 'AdBreak' });
-  } catch (err) {
-    if (!String(err).includes('409')) throw err; // already exists
   }
 
   const rule = {
@@ -97,7 +96,7 @@ async function provisionAlert(): Promise<void> {
           editorMode: 'code',
           instant: true,
           range: false,
-          expr: 'sum by (channel, region, device_class) (increase(adbreak_revenue_realized_usd_total[5m])) / clamp_min(sum by (channel, region, device_class) (increase(adbreak_revenue_expected_usd_total[5m])), 0.000001)',
+          expr: 'sum by (channel, region, device_class) (increase(adbreak_revenue_realized_usd_total[5m])) / (sum by (channel, region, device_class) (increase(adbreak_revenue_expected_usd_total[5m])) > 0)',
         },
       },
       {

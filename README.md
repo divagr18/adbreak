@@ -28,10 +28,25 @@ Inject the flagship fault — a beacon blackhole on one device class — and wat
 delivery metric stay green while the impressions disappear:
 
 ```bash
-curl -X POST localhost:8084/admin/faults -H 'content-type: application/json' \
-  -d '{"pathClass":"beacon","deviceClass":"roku","action":"blackhole"}'
-curl -X DELETE localhost:8084/admin/faults
+curl -X POST localhost:8086/inject -H 'content-type: application/json' \
+  -d '{"fault":"F07","params":{"device_class":"roku"},"duration_s":300}'
+curl localhost:8086/faults          # the whole catalogue, self-describing
+curl -X DELETE localhost:8086/inject
 ```
+
+## Telemetry
+
+Metrics, logs and traces ship to Grafana Cloud via Grafana Alloy. Provision the
+dashboards and the SLO alert with `npx tsx scripts/provision-grafana.ts`:
+
+- **Delivery Health** — the conventional NOC view. Contains no revenue signal by design.
+- **Revenue Realization** — RRR by device class, expected vs realized dollars, the ledger.
+- **Alert**: `RRR < 0.98 for 2m`, which is what triggers the agent.
+
+One trace per avail spans the whole chain. Trace context is created at playout and
+handed downstream the way the ad signal is: on the cue bus, then inside the manifest
+as an `X-ADBREAK-TRACE` daterange attribute, then over HTTP, then on the beacon URL —
+so a revenue gap can be followed back to the exact break that caused it.
 
 ## Architecture
 

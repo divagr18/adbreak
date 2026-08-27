@@ -105,9 +105,12 @@ function mcpQuery(exprs: string[]): Promise<(number | null)[]> {
   });
 }
 
+// `> 0` on the denominator, never clamp_min with an epsilon: when nothing was
+// expected in the window, the honest answer is "no data", not a ratio in the
+// millions. An epsilon floor silently turns a quiet period into a fake spike.
 const RRR = (dc: string) =>
-  `sum(increase(adbreak_revenue_realized_usd_total{device_class="${dc}"}[5m])) / clamp_min(sum(increase(adbreak_revenue_expected_usd_total{device_class="${dc}"}[5m])), 0.000001)`;
-const RRR_OTHERS = `sum(increase(adbreak_revenue_realized_usd_total{device_class!="${VICTIM}"}[5m])) / clamp_min(sum(increase(adbreak_revenue_expected_usd_total{device_class!="${VICTIM}"}[5m])), 0.000001)`;
+  `sum(increase(adbreak_revenue_realized_usd_total{device_class="${dc}"}[5m])) / (sum(increase(adbreak_revenue_expected_usd_total{device_class="${dc}"}[5m])) > 0)`;
+const RRR_OTHERS = `sum(increase(adbreak_revenue_realized_usd_total{device_class!="${VICTIM}"}[5m])) / (sum(increase(adbreak_revenue_expected_usd_total{device_class!="${VICTIM}"}[5m])) > 0)`;
 const CDN_5XX = 'sum(increase(adbreak_cdn_requests_total{status=~"5.."}[5m])) or vector(0)';
 const STITCH_ERR = 'sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)';
 const LEAK = 'sum(increase(adbreak_revenue_expected_usd_total[5m])) - sum(increase(adbreak_revenue_realized_usd_total[5m]))';
@@ -117,8 +120,23 @@ const fmt = (v: number | null) => (v === null ? 'no data' : v.toFixed(4));
 async function main(): Promise<void> {
   console.log('Gate B — reading everything back out of Grafana Cloud via MCP.\n');
 
-  console.log('baseline...');
-  const [rrrVictim0, rrrOthers0, cdn5xx0] = await mcpQuery([RRR(VICTIM), RRR_OTHERS, CDN_5XX]);
+  // Clear anything a previous run left behind, then wait for the 5m rate
+  // window to flush it out. Without this, a stale fault poisons the baseline
+  // and the gate reports a collapse that was already there.
+  await fetch(`${CHAOS}/inject`, { method: 'DELETE' }).catch(() => {});
+
+  console.log('baseline (waiting for a clean 5m window)...');
+  let rrrVictim0: number | null = null;
+  let rrrOthers0: number | null = null;
+  let cdn5xx0: number | null = null;
+  const deadline = Date.now() + 8 * 60_000;
+  for (;;) {
+    [rrrVictim0, rrrOthers0, cdn5xx0] = await mcpQuery([RRR(VICTIM), RRR_OTHERS, CDN_5XX]);
+    if ((rrrVictim0 ?? 0) > 0.9 || Date.now() > deadline) break;
+    console.log(`  ${VICTIM} RRR ${fmt(rrrVictim0)} — waiting for recovery...`);
+    await sleep(30_000);
+  }
+
   check(
     'baseline: metrics are queryable from Grafana Cloud',
     rrrVictim0 !== null && rrrOthers0 !== null,
@@ -160,9 +178,9 @@ async function main(): Promise<void> {
     `others RRR ${fmt(rrrOthers)} (SLO 0.98)`,
   );
   check(
-    'F07: delivery health stays green — CDN 5xx unchanged',
-    (cdn5xx ?? 0) === (cdn5xx0 ?? 0),
-    `cdn 5xx ${fmt(cdn5xx0)} -> ${fmt(cdn5xx)}`,
+    'F07: delivery health stays green — zero CDN 5xx',
+    (cdn5xx ?? 0) === 0,
+    `cdn 5xx in the last 5m: ${fmt(cdn5xx)} — every delivery dashboard reads healthy`,
   );
   check('F07: no stitch errors', (stitchErr ?? 0) === 0, `stitch errors ${fmt(stitchErr)}`);
   check(

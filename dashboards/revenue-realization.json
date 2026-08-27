@@ -32,7 +32,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(adbreak_revenue_realized_usd_total[5m])) / clamp_min(sum(increase(adbreak_revenue_expected_usd_total[5m])), 0.000001)",
+          "expr": "sum(increase(adbreak_revenue_realized_usd_total[5m])) / (sum(increase(adbreak_revenue_expected_usd_total[5m])) > 0)",
           "legendFormat": "RRR"
         }
       ]
@@ -119,7 +119,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (device_class) (increase(adbreak_revenue_realized_usd_total[5m])) / clamp_min(sum by (device_class) (increase(adbreak_revenue_expected_usd_total[5m])), 0.000001)",
+          "expr": "sum by (device_class) (increase(adbreak_revenue_realized_usd_total[5m])) / (sum by (device_class) (increase(adbreak_revenue_expected_usd_total[5m])) > 0)",
           "legendFormat": "{{device_class}}"
         }
       ]
