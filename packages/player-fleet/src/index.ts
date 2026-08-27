@@ -103,9 +103,11 @@ interface TrackingAvail {
 function scheduleBeacons(p: Player, avails: TrackingAvail[]): void {
   const now = Date.now();
   for (const avail of avails) {
-    for (const creative of avail.creatives) {
-      const key = `${avail.availId}|${creative.id}`;
-      if (p.scheduled.has(key)) continue;
+    avail.creatives.forEach((creative, pos) => {
+      // Keyed by pod position, not creative id: a pod may legitimately carry
+      // the same spot twice, and each is a separate billable impression.
+      const key = `${avail.availId}|${pos}|${creative.id}`;
+      if (p.scheduled.has(key)) return;
       p.scheduled.add(key);
       const creativeStart = Date.parse(avail.startTime) + creative.offsetS * 1000;
       for (const [event, fraction] of Object.entries(EVENT_FRACTIONS)) {
@@ -116,7 +118,7 @@ function scheduleBeacons(p: Player, avails: TrackingAvail[]): void {
         const delay = Math.max(0, at - now);
         setTimeout(() => void fireBeacon(p, event, url), delay);
       }
-    }
+    });
   }
 }
 
