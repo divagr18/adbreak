@@ -1,15 +1,41 @@
 // beacon-collector: the billing record.
 // A confirmed, deduplicated impression here is the only thing that earns money —
 // no beacon, no revenue, regardless of whether a human watched the ad.
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { startTracing } from '@adbreak/shared';
+startTracing('beacon-collector');
+
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { METRICS, createService } from '@adbreak/shared';
+import {
+  BILLABLE_EVENT,
+  METRICS,
+  contextFromTraceparent,
+  createService,
+  impressionValueUsd,
+  tracer,
+} from '@adbreak/shared';
 
 const svc = createService('beacon-collector');
 const LEDGER_PATH = process.env.LEDGER_PATH ?? '/data/beacons.jsonl';
+const CATALOG_PATH = process.env.CATALOG_PATH ?? '/app/creatives/index.json';
+const CHANNEL = process.env.CHANNEL ?? 'sports-1';
 mkdirSync(dirname(LEDGER_PATH), { recursive: true });
 
 const beaconFired = svc.counter(METRICS.beaconFired);
+const revenueRealized = svc.counter(METRICS.revenueRealized);
+
+/** creative id -> advertiser, so a confirmed impression can be priced. */
+const advertiserOf = new Map<string, string>();
+try {
+  const catalog = JSON.parse(readFileSync(CATALOG_PATH, 'utf8').replace(/^﻿/, '')) as {
+    id: string;
+    advertiser: string;
+  }[];
+  for (const c of catalog) advertiserOf.set(c.id, c.advertiser);
+  svc.log.info('catalog loaded', { creatives: advertiserOf.size });
+} catch (err) {
+  svc.log.error('catalog load failed — realized revenue will not be priced', { err: String(err) });
+}
 
 /** Everything already booked, keyed by session|avail|pod position|creative|event.
  *  Position is part of the key because one pod may legitimately carry the same
@@ -50,6 +76,21 @@ function record(q: Record<string, string>): boolean {
     region: q.region,
   });
 
+  // The impression beacon is the billing record: this line, and only this
+  // line, is where money is recognised as earned.
+  if (q.event === BILLABLE_EVENT) {
+    const advertiser = advertiserOf.get(q.creative) ?? 'unknown';
+    revenueRealized.inc(
+      {
+        channel: CHANNEL,
+        region: q.region,
+        advertiser,
+        device_class: q.device_class,
+      },
+      impressionValueUsd(advertiser, q.region),
+    );
+  }
+
   const s = stats.get(q.availId) ?? { byEvent: {}, byDeviceEvent: {}, sessions: new Set() };
   s.byEvent[q.event] = (s.byEvent[q.event] ?? 0) + 1;
   const dev = (s.byDeviceEvent[q.device_class] ??= {});
@@ -68,6 +109,26 @@ svc.app.all('/beacon', (req, res) => {
     res.status(400).json({ error: 'missing', missing });
     return;
   }
+  // Only sampled sessions carry a traceparent (the SSAI decides); its absence
+  // is the signal not to trace, which keeps a break's trace readable.
+  if (q.tp) {
+    tracer()
+      .startSpan(
+        'beacon.fire',
+        {
+          attributes: {
+            event: q.event,
+            avail_id: q.availId,
+            creative: q.creative,
+            device_class: q.device_class ?? 'unknown',
+            ack_status: 204,
+          },
+        },
+        contextFromTraceparent(q.tp),
+      )
+      .end();
+  }
+
   const fresh = record({
     event: q.event,
     session: q.session,

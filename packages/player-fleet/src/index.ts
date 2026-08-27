@@ -29,9 +29,12 @@ const fetchErrors = svc.counter({
   help: 'Playlist/segment fetch failures seen by the fleet',
   labels: ['kind'] as const,
 });
-const beaconsFiredClient = svc.counter({
-  name: 'adbreak_fleet_beacons_fired_total',
-  help: 'Tracking beacons the players attempted to fire',
+/** Client-side *attempts*. Deliberately not named like the collector's
+ *  adbreak_beacon_fired_total, which counts server-side *receipts* — the
+ *  difference between the two is precisely the loss inside the CDN. */
+const beaconAttempts = svc.counter({
+  name: 'adbreak_fleet_beacon_attempts_total',
+  help: 'Tracking beacons the players attempted to fire (client side)',
   labels: ['event', 'device_class'] as const,
 });
 
@@ -87,7 +90,7 @@ async function fireBeacon(p: Player, event: string, url: string): Promise<void> 
       svc.log.warn('beacon rejected', { session_id: p.id, event, status: res.status });
       return;
     }
-    beaconsFiredClient.inc({ event, device_class: p.deviceClass });
+    beaconAttempts.inc({ event, device_class: p.deviceClass });
   } catch (err) {
     fetchErrors.inc({ kind: 'beacon' });
     svc.log.warn('beacon fire failed', { session_id: p.id, event, err: String(err) });
@@ -152,8 +155,20 @@ async function cycle(p: Player): Promise<void> {
 }
 
 const players = Array.from({ length: SESSIONS }, (_, i) => makePlayer(i));
+
+// set(), not inc(): this is a gauge of how many sessions exist right now, and
+// incrementing it would make the count climb forever across restarts.
+const cohort = new Map<string, number>();
 for (const p of players) {
-  sessionsGauge.inc({ device_class: p.deviceClass, region: p.region, cdn: p.cdn });
+  const key = `${p.deviceClass}|${p.region}|${p.cdn}`;
+  cohort.set(key, (cohort.get(key) ?? 0) + 1);
+}
+for (const [key, count] of cohort) {
+  const [device_class, region, cdn] = key.split('|');
+  sessionsGauge.set({ device_class, region, cdn }, count);
+}
+
+for (const p of players) {
   // Jitter start so 200 clients don't stampede the edge in lockstep.
   setTimeout(() => {
     void cycle(p);

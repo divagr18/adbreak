@@ -22,6 +22,11 @@ x-node-service: &node-service
     BEACON_BASE: http://edge:3000
     PUBLIC_MEDIA_BASE: ""
     PORT: "3000"
+    # Tracing is additive: absent these, services run exactly as before.
+    GC_OTLP_URL: ${GC_OTLP_URL:-}
+    GC_OTLP_USER: ${GC_OTLP_USER:-}
+    GC_TOKEN: ${GC_TOKEN:-}
+    TRACE_SAMPLE_RATIO: ${TRACE_SAMPLE_RATIO:-1}
   restart: unless-stopped
 
 services:
@@ -94,6 +99,7 @@ services:
     command: ["npx", "tsx", "watch", "packages/beacon-collector/src/index.ts"]
     volumes:
       - ./packages:/app/packages
+      - ./creatives:/app/creatives:ro
       - ./data:/data
     ports: ["8085:3000"]
 
@@ -105,6 +111,29 @@ services:
       - ./data:/data
     ports: ["8086:3000"]
 
+  # Ships plant metrics and logs to Grafana Cloud. Runs only when the GC_*
+  # ingest credentials are present; the plant is fully functional without it.
+  alloy:
+    image: grafana/alloy:latest
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+    volumes:
+      - ./plant/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    environment:
+      GC_PROM_URL: ${GC_PROM_URL:-}
+      GC_PROM_USER: ${GC_PROM_USER:-}
+      GC_LOKI_URL: ${GC_LOKI_URL:-}
+      GC_LOKI_USER: ${GC_LOKI_USER:-}
+      GC_TOKEN: ${GC_TOKEN:-}
+    ports: ["12345:12345"]
+    restart: unless-stopped
+
 volumes:
   hls:
   encoder-source:
+  alloy-data:

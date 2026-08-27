@@ -1,6 +1,9 @@
 // edge: CDN simulator and the single ingress for every client.
 // Proxies manifests, segments and beacons, and owns the fault table that makes
 // F07 (beacon blackhole) and F08 (regional 5xx) possible.
+import { startTracing } from '@adbreak/shared';
+startTracing('edge');
+
 import { Readable } from 'node:stream';
 import { Router, type Request, type Response } from 'express';
 import { METRICS, createService } from '@adbreak/shared';

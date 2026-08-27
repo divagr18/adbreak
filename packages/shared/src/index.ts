@@ -4,3 +4,5 @@ export * from './logger.js';
 export * from './service.js';
 export * from './scte35.js';
 export * from './m3u8.js';
+export * from './pricing.js';
+export * from './tracing.js';

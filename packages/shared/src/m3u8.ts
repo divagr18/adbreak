@@ -72,6 +72,8 @@ export interface CueWindow {
   availId: string;
   startMs: number;
   durationS: number;
+  /** W3C traceparent carried on the daterange, if the packager set one. */
+  traceparent?: string;
 }
 
 const attr = (line: string, name: string): string | undefined =>
@@ -93,7 +95,7 @@ export function parseCueWindows(text: string): CueWindow[] {
     const startMs = Date.parse(startDate);
     const durationS = Number(planned);
     if (Number.isNaN(startMs) || Number.isNaN(durationS)) continue;
-    out.push({ availId, startMs, durationS });
+    out.push({ availId, startMs, durationS, traceparent: attr(line, 'X-ADBREAK-TRACE') });
   }
   return out;
 }

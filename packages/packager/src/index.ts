@@ -1,13 +1,18 @@
 // packager: consumes the cue bus, owns the content manifest, injects
 // EXT-X-DATERANGE (SCTE35-OUT/IN) + CUE-OUT/CUE-IN at segment boundaries.
+import { startTracing } from '@adbreak/shared';
+startTracing('packager');
+
 import { Router } from 'express';
 import { createClient } from 'redis';
 import {
   CUE_CHANNEL,
   METRICS,
+  contextFromTraceparent,
   createService,
   encodeSpliceInsert,
   pts90kFromMs,
+  tracer,
   type CueMessage,
 } from '@adbreak/shared';
 import { injectMarkers, type CueState } from './rewrite.js';
@@ -71,12 +76,20 @@ await redis.subscribe(CUE_CHANNEL, (raw) => {
     return;
   }
   const spliceTimeMs = Date.parse(cue.spliceTime);
+  tracer()
+    .startSpan(
+      'package.inject_marker',
+      { attributes: { avail_id: cue.availId, packager: PACKAGER_ID } },
+      contextFromTraceparent(cue.traceparent),
+    )
+    .end();
   cues.set(cue.availId, {
     availId: cue.availId,
     channel: cue.channel,
     spliceTimeMs,
     durationS: cue.durationS,
     scte35Out: cue.scte35Out,
+    traceparent: cue.traceparent,
     scte35In: encodeSpliceInsert({
       eventId: spliceTimeMs % 0xffff,
       pts90k: pts90kFromMs(spliceTimeMs + cue.durationS * 1000),

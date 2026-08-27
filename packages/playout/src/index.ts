@@ -1,4 +1,7 @@
 // playout: owns the avail schedule; emits SCTE-35 cues on the Redis cue bus.
+import { startTracing } from '@adbreak/shared';
+startTracing('playout');
+
 import { readFileSync } from 'node:fs';
 import { Router } from 'express';
 import { createClient } from 'redis';
@@ -7,9 +10,12 @@ import {
   CUE_CHANNEL,
   METRICS,
   availId,
+  contextFromTraceparent,
   createService,
   encodeSpliceInsert,
   pts90kFromMs,
+  traceparentOf,
+  tracer,
   type BreakType,
   type CueMessage,
 } from '@adbreak/shared';
@@ -74,6 +80,19 @@ async function emitCue(spliceTime: Date): Promise<void> {
     });
     return;
   }
+  // Root of this avail's lifecycle trace. It is created here, at the true
+  // origin of the ad signal, and every later stage hangs off it.
+  const root = tracer().startSpan('avail.lifecycle', {
+    attributes: {
+      avail_id: id,
+      channel,
+      duration_s,
+      break_type,
+      splice_time: spliceTime.toISOString(),
+    },
+  });
+  const traceparent = traceparentOf(root);
+
   const cue: CueMessage = {
     kind: 'splice_insert',
     availId: id,
@@ -87,8 +106,15 @@ async function emitCue(spliceTime: Date): Promise<void> {
       durationS: duration_s,
       out: true,
     }),
+    traceparent,
   };
   await redis.publish(CUE_CHANNEL, JSON.stringify(cue));
+  tracer()
+    .startSpan('signal.emit', { attributes: { avail_id: id } }, contextFromTraceparent(traceparent))
+    .end();
+  // The root stays open across the break so late stages (stitch, beacons)
+  // attach to a live trace; close it once the break plus its beacons are done.
+  setTimeout(() => root.end(), (lead_time_s + duration_s + 30) * 1000);
   availSignaled.inc({ channel, region: 'all', break_type });
   svc.log.info('cue emitted', {
     avail_id: id,

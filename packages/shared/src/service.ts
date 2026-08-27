@@ -11,6 +11,7 @@ import {
   Gauge,
   Histogram,
   collectDefaultMetrics,
+  type OpenMetricsContentType,
 } from 'prom-client';
 import { METRICS } from './telemetry.js';
 import { logger, type Logger } from './logger.js';
@@ -25,7 +26,7 @@ type MetricSpec = {
 export interface ServiceContext {
   app: Express;
   log: Logger;
-  registry: Registry;
+  registry: Registry<OpenMetricsContentType>;
   counter(spec: MetricSpec): Counter<string>;
   gauge(spec: MetricSpec): Gauge<string>;
   histogram(spec: MetricSpec): Histogram<string>;
@@ -38,7 +39,11 @@ export function createService(component: string): ServiceContext {
   const app = express();
   app.use(express.json());
   const log = logger(component);
-  const registry = new Registry();
+  // OpenMetrics, not the classic Prometheus text format: exemplars are only
+  // exposed in OpenMetrics, and exemplars are what let a metric spike in
+  // Grafana jump straight to the trace of the avail that caused it.
+  const registry = new Registry<OpenMetricsContentType>();
+  registry.setContentType(Registry.OPENMETRICS_CONTENT_TYPE);
   registry.setDefaultLabels({ service: component });
   collectDefaultMetrics({ register: registry });
 

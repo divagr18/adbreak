@@ -14,6 +14,8 @@ export interface CueState {
   durationS: number;
   scte35Out: string;
   scte35In: string;
+  /** W3C traceparent, carried to downstream SSAI inside the manifest. */
+  traceparent?: string;
 }
 
 export interface RewriteResult {
@@ -26,7 +28,10 @@ const iso = (ms: number) => new Date(ms).toISOString();
 
 const dateRangeOut = (cue: CueState): string =>
   `#EXT-X-DATERANGE:ID="${cue.availId}",START-DATE="${iso(cue.spliceTimeMs)}",` +
-  `PLANNED-DURATION=${cue.durationS.toFixed(3)},SCTE35-OUT=0x${cue.scte35Out.toUpperCase()}`;
+  `PLANNED-DURATION=${cue.durationS.toFixed(3)},SCTE35-OUT=0x${cue.scte35Out.toUpperCase()}` +
+  // HLS permits X-prefixed client attributes on a DATERANGE, so the avail's
+  // trace context rides the manifest exactly as the SCTE-35 payload does.
+  (cue.traceparent ? `,X-ADBREAK-TRACE="${cue.traceparent}"` : '');
 
 export function injectMarkers(playlist: string, cues: CueState[]): RewriteResult {
   const { header, segments, trailer } = parsePlaylist(playlist);

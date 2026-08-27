@@ -1,5 +1,8 @@
 // ads: mock VAST 4.x ad decision server.
 // The knobs here ARE the F03 (latency) and F04 (no-fill) chaos surface.
+import { startTracing } from '@adbreak/shared';
+startTracing('ads');
+
 import { readFileSync } from 'node:fs';
 import { Router } from 'express';
 import { BEACON_EVENTS, METRICS, createService } from '@adbreak/shared';

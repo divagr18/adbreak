@@ -84,15 +84,17 @@ export const METRICS = {
     help: '1 - fired/expected impressions over the rolling window',
     labels: ['device_class', 'cdn', 'region'] as const,
   },
+  // device_class is on both sides deliberately: without it the RRR SLO cannot
+  // see a single device class collapse, which is the entire F07 detection story.
   revenueExpected: {
     name: 'adbreak_revenue_expected_usd_total',
     help: 'Expected revenue from signaled avails (deterministic)',
-    labels: ['channel', 'region', 'advertiser'] as const,
+    labels: ['channel', 'region', 'advertiser', 'device_class'] as const,
   },
   revenueRealized: {
     name: 'adbreak_revenue_realized_usd_total',
     help: 'Realized revenue from confirmed billable impressions',
-    labels: ['channel', 'region', 'advertiser'] as const,
+    labels: ['channel', 'region', 'advertiser', 'device_class'] as const,
   },
   revenueLeak: {
     name: 'adbreak_revenue_leak_usd_total',

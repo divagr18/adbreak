@@ -6,10 +6,16 @@
 //    so a packager that drops a cue (F02) really does starve ad insertion.
 //  - Ads and content are both 4s and avails are a multiple of 4s, so segments
 //    are substituted 1:1 and EXT-X-MEDIA-SEQUENCE is never rewritten.
+import { startTracing } from '@adbreak/shared';
+startTracing('ssai');
+
 import {
   BEACON_EVENTS,
   METRICS,
+  contextFromTraceparent,
+  inSpan,
   createService,
+  impressionValueUsd,
   parseCueWindows,
   parsePlaylist,
   serialize,
@@ -25,11 +31,28 @@ const SEGMENT_S = Number(process.env.SEGMENT_S ?? 4);
 const SLATE_ID = 'slate';
 const SESSION_TTL_MS = 5 * 60_000;
 
+/**
+ * Fraction of sessions whose per-session work is traced. Every span for one
+ * avail shares that avail's trace, so trace-ID ratio sampling is useless here:
+ * it would keep or drop the entire break. Sampling per session instead keeps a
+ * trace small enough to actually read — a handful of sessions is far more
+ * legible than all 200 — and it is deterministic, so the same sessions appear
+ * across breaks rather than a different random subset each time.
+ */
+const SPAN_SAMPLE = Number(process.env.SPAN_SAMPLE ?? 0.02);
+
+function isTraced(sessionId: string): boolean {
+  let h = 0;
+  for (let i = 0; i < sessionId.length; i++) h = (h * 31 + sessionId.charCodeAt(i)) >>> 0;
+  return (h % 10_000) / 10_000 < SPAN_SAMPLE;
+}
+
 const availDecided = svc.counter(METRICS.availDecided);
 const slateSeconds = svc.counter(METRICS.slateSeconds);
 const stitchErrors = svc.counter(METRICS.stitchErrors);
 const manifestLatency = svc.histogram(METRICS.manifestLatency);
 const beaconExpected = svc.counter(METRICS.beaconExpected);
+const revenueExpected = svc.counter(METRICS.revenueExpected);
 
 interface Session {
   id: string;
@@ -44,6 +67,7 @@ interface Session {
 
 interface PodCreative {
   id: string;
+  advertiser: string;
   durationS: number;
   offsetS: number;
   tracking: Record<string, string>;
@@ -111,9 +135,16 @@ async function segmentsFor(creativeId: string): Promise<string[]> {
 
 // ---- ad decisioning -------------------------------------------------------
 
+interface ParsedAd {
+  id: string;
+  advertiser: string;
+  durationS: number;
+  tracking: Record<string, string>;
+}
+
 /** Parse our own well-known VAST output; no XML dependency needed. */
-function parseVast(xml: string): { id: string; durationS: number; tracking: Record<string, string> }[] {
-  const ads: { id: string; durationS: number; tracking: Record<string, string> }[] = [];
+function parseVast(xml: string): ParsedAd[] {
+  const ads: ParsedAd[] = [];
   for (const block of xml.split(/<Ad\s/).slice(1)) {
     const id = /id="([^"]+)"/.exec(block)?.[1];
     const dur = /<Duration>(\d+):(\d+):(\d+)<\/Duration>/.exec(block);
@@ -125,6 +156,7 @@ function parseVast(xml: string): { id: string; durationS: number; tracking: Reco
     }
     ads.push({
       id,
+      advertiser: /<Advertiser><!\[CDATA\[([^\]]*)\]\]><\/Advertiser>/.exec(block)?.[1] ?? 'unknown',
       durationS: Number(dur[1]) * 3600 + Number(dur[2]) * 60 + Number(dur[3]),
       tracking,
     });
@@ -141,8 +173,17 @@ async function decide(session: Session, cue: CueWindow): Promise<void> {
     device_class: session.deviceClass,
     region: session.region,
   });
-  const xml = await fetch(`${ADS_URL}/vast?${q}`).then((r) => r.text());
-  const ads = parseVast(xml);
+  // Hangs off the avail's root span, which arrived inside the manifest.
+  const traced = isTraced(session.id);
+  const fetchVast = async () => parseVast(await fetch(`${ADS_URL}/vast?${q}`).then((r) => r.text()));
+  const ads = traced
+    ? await inSpan(
+        'decision.request',
+        { avail_id: cue.availId, session_id: session.id, device_class: session.deviceClass },
+        contextFromTraceparent(cue.traceparent),
+        fetchVast,
+      )
+    : await fetchVast();
 
   const slots: string[] = [];
   const creatives: PodCreative[] = [];
@@ -152,6 +193,7 @@ async function decide(session: Session, cue: CueWindow): Promise<void> {
     slots.push(...segs);
     creatives.push({
       id: ad.id,
+      advertiser: ad.advertiser,
       durationS: ad.durationS,
       offsetS,
       tracking: Object.fromEntries(
@@ -161,6 +203,11 @@ async function decide(session: Session, cue: CueWindow): Promise<void> {
           u.searchParams.set('cdn', session.cdn);
           u.searchParams.set('isp', session.isp);
           u.searchParams.set('region', session.region);
+          // Carries the avail's trace onto the billing record, so a revenue
+          // gap can be followed back to the exact break that produced it.
+          // Only for sampled sessions — its presence is what tells the
+          // collector to emit a span at all.
+          if (traced && cue.traceparent) u.searchParams.set('tp', cue.traceparent);
           return [ev, u.toString()];
         }),
       ),
@@ -190,9 +237,10 @@ async function decide(session: Session, cue: CueWindow): Promise<void> {
   });
 
   availDecided.inc({ channel: CHANNEL, region: session.region, ads: 'ads-1' });
-  // Server-side truth: what this session *should* report back. Counting here
-  // rather than at the player keeps the number honest when the client never
-  // fires at all, and when the CDN blackholes the beacon (F07).
+  // Server-side truth: what this session *should* report back, and what that
+  // is worth. Counting here rather than at the player keeps the number honest
+  // when the client never fires at all, and when the CDN blackholes the
+  // beacon (F07) — the two cases that matter most.
   for (const c of creatives) {
     for (const ev of BEACON_EVENTS) {
       beaconExpected.inc({
@@ -203,6 +251,15 @@ async function decide(session: Session, cue: CueWindow): Promise<void> {
         region: session.region,
       });
     }
+    revenueExpected.inc(
+      {
+        channel: CHANNEL,
+        region: session.region,
+        advertiser: c.advertiser,
+        device_class: session.deviceClass,
+      },
+      impressionValueUsd(c.advertiser, session.region),
+    );
   }
   svc.log.info('avail decided', {
     avail_id: cue.availId,
