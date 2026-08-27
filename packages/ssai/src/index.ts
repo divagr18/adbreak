@@ -14,6 +14,7 @@ import {
   METRICS,
   contextFromTraceparent,
   inSpan,
+  traceparentOf,
   createService,
   impressionValueUsd,
   parseCueWindows,
@@ -175,13 +176,22 @@ async function decide(session: Session, cue: CueWindow): Promise<void> {
   });
   // Hangs off the avail's root span, which arrived inside the manifest.
   const traced = isTraced(session.id);
-  const fetchVast = async () => parseVast(await fetch(`${ADS_URL}/vast?${q}`).then((r) => r.text()));
+  // The traceparent is passed explicitly rather than left to HTTP
+  // auto-instrumentation: ESM hoists every import, so express and http are
+  // already loaded by the time startTracing() runs and the patch cannot be
+  // relied on. Being explicit also makes ads.respond a real child of this span.
+  const fetchVast = async (traceparent?: string) =>
+    parseVast(
+      await fetch(`${ADS_URL}/vast?${q}`, {
+        headers: traceparent ? { traceparent } : {},
+      }).then((r) => r.text()),
+    );
   const ads = traced
     ? await inSpan(
         'decision.request',
         { avail_id: cue.availId, session_id: session.id, device_class: session.deviceClass },
         contextFromTraceparent(cue.traceparent),
-        fetchVast,
+        (span) => fetchVast(traceparentOf(span)),
       )
     : await fetchVast();
 

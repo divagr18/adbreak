@@ -569,6 +569,26 @@ The build is a vertical slice: the thinnest end-to-end path that makes the F07 d
 
 ### Phase B — the money shot (Days 5–6, Aug 31 – Sep 1)
 
+> **Status (28 Aug): telemetry live in Grafana Cloud, four days early.**
+> Grafana Alloy ships metrics (OpenMetrics, exemplars on), structured logs and
+> traces. Two dashboards and the RRR burn-rate alert are provisioned as code.
+> The money tier — expected/realized revenue, priced from one `pricing.ts` —
+> now exists; a metric audit had found all five money metrics declared but
+> never emitted.
+>
+> Three things learned by running it, all of which shape Phase C:
+> - **RRR over a short window is noisy by construction.** Expected revenue is
+>   booked when a pod is decided; the matching impressions land over the next
+>   ~45s, so a 5m window holding a partial break reads ~0.85 on a healthy
+>   plant. The SLO's own 15m window is the only honest one to alert on — a 5m
+>   alert put all 18 channel/region/device series into Pending at once.
+> - **Never floor an SLO denominator with an epsilon.** `clamp_min(expected,
+>   1e-6)` turned a quiet window into RRR = 1,370,555 on a healthy plant. Filter
+>   with `> 0` and return no data instead.
+> - **Sample traces per session, not per trace.** Every span of a break shares
+>   that break's trace id, so ratio sampling keeps or drops the whole break;
+>   200 sessions produced a single 1,002-span trace before this.
+
 - OTel metrics per the §8 contract — **metrics first, logs second, traces only on the avail lifecycle**; exemplars only on `ads_response_duration_seconds`
 - Two dashboards, not four: **delivery-health** (the all-green one) and **revenue-realization** (RRR + ledger)
 - RRR computed, burn-rate alert firing

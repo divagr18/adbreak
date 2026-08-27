@@ -27,6 +27,9 @@ x-node-service: &node-service
     GC_OTLP_USER: ${GC_OTLP_USER:-}
     GC_TOKEN: ${GC_TOKEN:-}
     TRACE_SAMPLE_RATIO: ${TRACE_SAMPLE_RATIO:-1}
+    # Share of sessions whose per-session work is traced. Every span of a break
+    # shares that break's trace, so this is what keeps a trace readable.
+    SPAN_SAMPLE: ${SPAN_SAMPLE:-0.05}
   restart: unless-stopped
 
 services:

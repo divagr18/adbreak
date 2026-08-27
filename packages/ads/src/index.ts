@@ -5,7 +5,14 @@ startTracing('ads');
 
 import { readFileSync } from 'node:fs';
 import { Router } from 'express';
-import { BEACON_EVENTS, METRICS, createService, exemplarLabels } from '@adbreak/shared';
+import {
+  BEACON_EVENTS,
+  METRICS,
+  contextFromTraceparent,
+  createService,
+  exemplarLabels,
+  tracer,
+} from '@adbreak/shared';
 
 const svc = createService('ads');
 const ADS_ID = process.env.ADS_ID ?? 'ads-1';
@@ -154,9 +161,28 @@ svc.app.get('/vast', async (req, res) => {
   recordFill(region, availS, podS);
   // Exemplar on the latency histogram: a p99 spike on the dashboard becomes a
   // click through to the trace of the avail that caused it. This is the jump
-  // an F03 investigation starts with.
+  // an F03 investigation starts with. The span is built from the inbound
+  // traceparent rather than from an ambient context, because ESM import
+  // hoisting makes HTTP auto-instrumentation unreliable here.
   const elapsedS = Number(process.hrtime.bigint() - started) / 1e9;
-  const exemplar = exemplarLabels();
+  const inbound = req.get('traceparent');
+  let exemplar: { traceId: string; spanId: string } | undefined;
+  if (inbound) {
+    const span = tracer().startSpan(
+      'ads.respond',
+      {
+        attributes: {
+          avail_id: availId,
+          fill: pod.length > 0,
+          pod_duration_s: podS,
+          creative_ids: pod.map((c) => c.id).join(','),
+        },
+      },
+      contextFromTraceparent(inbound),
+    );
+    exemplar = exemplarLabels(span);
+    span.end();
+  }
   if (exemplar) {
     adsDuration.observe({
       labels: { ads: ADS_ID, region },

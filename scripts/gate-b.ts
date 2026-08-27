@@ -110,7 +110,15 @@ function mcpQuery(exprs: string[]): Promise<(number | null)[]> {
 // millions. An epsilon floor silently turns a quiet period into a fake spike.
 const RRR = (dc: string) =>
   `sum(increase(adbreak_revenue_realized_usd_total{device_class="${dc}"}[5m])) / (sum(increase(adbreak_revenue_expected_usd_total{device_class="${dc}"}[5m])) > 0)`;
-const RRR_OTHERS = `sum(increase(adbreak_revenue_realized_usd_total{device_class!="${VICTIM}"}[5m])) / (sum(increase(adbreak_revenue_expected_usd_total{device_class!="${VICTIM}"}[5m])) > 0)`;
+/**
+ * The unaffected classes are judged over the SLO's own 15m window, not 5m.
+ * Expected revenue is booked when a pod is decided; the matching impressions
+ * land over the following ~45s. A 5m window holding a partial break therefore
+ * reads ~0.85 on a perfectly healthy plant, which is noise, not a breach.
+ * The victim is still measured at 5m because "did it collapse" is a detector
+ * question and a short window answers it unambiguously.
+ */
+const RRR_OTHERS = `sum(increase(adbreak_revenue_realized_usd_total{device_class!="${VICTIM}"}[15m])) / (sum(increase(adbreak_revenue_expected_usd_total{device_class!="${VICTIM}"}[15m])) > 0)`;
 const CDN_5XX = 'sum(increase(adbreak_cdn_requests_total{status=~"5.."}[5m])) or vector(0)';
 const STITCH_ERR = 'sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)';
 const LEAK = 'sum(increase(adbreak_revenue_expected_usd_total[5m])) - sum(increase(adbreak_revenue_realized_usd_total[5m]))';
@@ -129,11 +137,18 @@ async function main(): Promise<void> {
   let rrrVictim0: number | null = null;
   let rrrOthers0: number | null = null;
   let cdn5xx0: number | null = null;
-  const deadline = Date.now() + 8 * 60_000;
+  // Wait for the whole plant to be healthy, not just the victim. A service
+  // restart resets its counters while its peers keep climbing, so any window
+  // straddling one undercounts and reads as a false breach — the 15m SLO
+  // window needs a full 15m of undisturbed data before it means anything.
+  const deadline = Date.now() + 20 * 60_000;
   for (;;) {
     [rrrVictim0, rrrOthers0, cdn5xx0] = await mcpQuery([RRR(VICTIM), RRR_OTHERS, CDN_5XX]);
-    if ((rrrVictim0 ?? 0) > 0.9 || Date.now() > deadline) break;
-    console.log(`  ${VICTIM} RRR ${fmt(rrrVictim0)} — waiting for recovery...`);
+    const healthy = (rrrVictim0 ?? 0) > 0.9 && (rrrOthers0 ?? 0) >= 0.98;
+    if (healthy || Date.now() > deadline) break;
+    console.log(
+      `  ${VICTIM} RRR ${fmt(rrrVictim0)}, others ${fmt(rrrOthers0)} — waiting for a settled window...`,
+    );
     await sleep(30_000);
   }
 
@@ -174,8 +189,8 @@ async function main(): Promise<void> {
   );
   check(
     'F07: every other device class holds the SLO',
-    (rrrOthers ?? 0) > 0.9,
-    `others RRR ${fmt(rrrOthers)} (SLO 0.98)`,
+    (rrrOthers ?? 0) >= 0.98,
+    `others RRR ${fmt(rrrOthers)} over the 15m SLO window (SLO 0.98)`,
   );
   check(
     'F07: delivery health stays green — zero CDN 5xx',
