@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.sh text eol=lf
+packages/**/*.ts text eol=lf
+spike/**/*.ts text eol=lf
+*.mp4 binary
+creatives/** binary
