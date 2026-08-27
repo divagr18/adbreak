@@ -14,7 +14,7 @@ cd spike
 npm install
 $env:GRAFANA_URL = "https://<you>.grafana.net"
 $env:GRAFANA_SERVICE_ACCOUNT_TOKEN = "glsa_..."
-$env:GOOGLE_GENAI_USE_VERTEXAI = "true"
+$env:GOOGLE_GENAI_USE_ENTERPRISE = "true"
 $env:GOOGLE_CLOUD_PROJECT = "adbreak-hack"
 $env:GOOGLE_CLOUD_LOCATION = "us-central1"
 npx adk run agent.ts

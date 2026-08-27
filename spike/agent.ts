@@ -1,5 +1,5 @@
-/**
- * Day-1 spike — proves the four load-bearing assumptions in one run:
+﻿/**
+ * Day-1 spike â€” proves the four load-bearing assumptions in one run:
  *   1. ADK-TS workflow agents exist (SequentialAgent)
  *   2. Gemini works via Vertex AI from TS
  *   3. Grafana MCP server connects as an MCPToolset (stdio, docker)
@@ -35,7 +35,7 @@ const grafana = (toolFilter?: string[]) =>
 
 const reader = new LlmAgent({
   name: 'read_proof',
-  model: 'gemini-flash-latest',
+  model: 'gemini-2.5-flash',
   description: 'Proves Grafana MCP reads work',
   instruction:
     'Call query_prometheus against the default datasource with the query "up" (instant). ' +
@@ -45,10 +45,10 @@ const reader = new LlmAgent({
 
 const writer = new LlmAgent({
   name: 'write_proof',
-  model: 'gemini-flash-latest',
+  model: 'gemini-2.5-flash',
   description: 'Proves Grafana MCP writes work',
   instruction:
-    'Call create_annotation with the text "adbreak day-1 spike — hello from ADK-TS" and tag "adbreak-spike". ' +
+    'Call create_annotation with the text "adbreak day-1 spike - hello from ADK-TS" and tag "adbreak-spike". ' +
     'Report the annotation id returned. If the tool is missing or errors, say FAILED and quote the error verbatim.',
   tools: [grafana(['create_annotation'])],
 });
@@ -59,3 +59,4 @@ export const rootAgent = new SequentialAgent({
   description: 'read-then-write proof against Grafana Cloud via MCP',
   subAgents: [reader, writer],
 });
+
