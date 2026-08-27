@@ -525,6 +525,30 @@ The build is a vertical slice: the thinnest end-to-end path that makes the F07 d
 
 ### Phase A — the F07 vertical slice (Days 1–4, Aug 27–30)
 
+> **Status (27 Aug): Days 1–3 complete in one day; Gate A reached three days early.**
+> Live HLS, real SCTE-35 cues, marker injection, VAST decisioning, per-session SSAI
+> stitching, a 200-session fleet and the beacon billing record all run under
+> `docker compose up`. 21 unit tests green; `scripts/gate-a.ts` verifies a real break
+> end-to-end and then injects F07.
+>
+> Decisions taken during the build, all deliberate deviations from this document:
+> - **Avails are 32s, not 30s** — exactly 8 × 4s segments, so the SSAI substitutes
+>   segments 1:1 and never rewrites `EXT-X-MEDIA-SEQUENCE`. This removed the largest
+>   single source of stitching bugs.
+> - **The CDN tier is a TypeScript reverse proxy, not Envoy** — same fault semantics
+>   (blackhole / 5xx, per device class and PoP) for ~150 lines and no config learning
+>   curve. Disclosed in the README.
+> - **Ad creatives are pre-conditioned** to the content profile rather than transcoded
+>   on demand, which deletes the `conditioner` service and F05 from the build (already
+>   cut in the 13-day scope).
+> - **`beacon_expected_total` is counted at the SSAI**, not at the player: server-side
+>   truth stays correct both when the CDN blackholes the beacon (F07) and when the
+>   client never fires at all.
+> - **SSAI learns of breaks from manifest markers, never from the cue bus** — otherwise
+>   an F02 packager cue-drop would not propagate to ad insertion and the failure
+>   taxonomy would be fiction. The packager announces future breaks via `DATERANGE`
+>   with a forward `START-DATE` so ad decisioning still gets its lead time.
+
 **Day 1 (Aug 27):**
 - GCP project, billing, Vertex AI enabled, Grafana Cloud account
 - **Prove Grafana MCP read AND write from a local ADK agent today.** The track rules make the Grafana Cloud MCP server connection *mandatory*, so this is the first thing verified, not the thirtieth. If a specific write capability is missing, shim only that call via the HTTP API, keep every read on MCP, and disclose it (see risk 3).

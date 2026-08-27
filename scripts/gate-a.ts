@@ -72,11 +72,16 @@ async function main(): Promise<void> {
   // --- 2. sample the personalized manifest across the whole break ---------
   const adUris = new Set<string>();
   let sawDiscontinuity = false;
-  let seqMatched = true;
-  const seqOf = (p: string) => /#EXT-X-MEDIA-SEQUENCE:(\d+)/.exec(p)?.[1];
+  let worstSeqSkew = 0;
+  const seqOf = (p: string) => {
+    const m = /#EXT-X-MEDIA-SEQUENCE:(\d+)/.exec(p);
+    return m ? Number(m[1]) : undefined;
+  };
 
+  // Sample past the end of the break: the final ad segment only enters the live
+  // window once the encoder has finished writing it, ~4s after its start time.
   const endMs = startMs + durationS * 1000;
-  while (Date.now() < endMs + 4000) {
+  while (Date.now() < endMs + 12_000) {
     const [session, content] = await Promise.all([
       text(`${EDGE}/session/${DEMO_SESSION}/playlist.m3u8`),
       text(`${PACKAGER}/content/live.m3u8`),
@@ -85,7 +90,8 @@ async function main(): Promise<void> {
       if (line.startsWith('/seg/creatives/')) adUris.add(line);
     }
     if (session.includes('#EXT-X-DISCONTINUITY')) sawDiscontinuity = true;
-    if (seqOf(session) && seqOf(content) && seqOf(session) !== seqOf(content)) seqMatched = false;
+    const [a, b] = [seqOf(session), seqOf(content)];
+    if (a !== undefined && b !== undefined) worstSeqSkew = Math.max(worstSeqSkew, Math.abs(a - b));
     await sleep(2000);
   }
   clearInterval(probe);
@@ -96,10 +102,13 @@ async function main(): Promise<void> {
     `${adUris.size} distinct ad segments: ${[...adUris].map((u) => u.split('/').slice(-2).join('/')).join(', ')}`,
   );
   check('discontinuity marked at the content/ad boundary', sawDiscontinuity, 'EXT-X-DISCONTINUITY present');
+  // SSAI and the packager poll independently, so the personalized manifest can
+  // legitimately sit one segment behind. Anything beyond that means the stitcher
+  // is rewriting the sequence rather than substituting segments in place.
   check(
     'media sequence preserved (1:1 substitution)',
-    seqMatched,
-    'session manifest MEDIA-SEQUENCE tracked the content manifest throughout',
+    worstSeqSkew <= 1,
+    `worst MEDIA-SEQUENCE skew vs content manifest: ${worstSeqSkew} segment(s)`,
   );
 
   // --- 3. the billing record ---------------------------------------------
