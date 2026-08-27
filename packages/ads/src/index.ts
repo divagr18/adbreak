@@ -24,6 +24,9 @@ const knobs = {
   latency_ms: Number(process.env.LATENCY_MS ?? 150),
   jitter_ms: Number(process.env.JITTER_MS ?? 50),
   fill_rate: Number(process.env.FILL_RATE ?? 1),
+  /** Cap the pod at this fraction of the avail — the F09 underfill surface.
+   *  Whatever is left unsold gets slated by the SSAI. */
+  max_pod_ratio: Number(process.env.MAX_POD_RATIO ?? 1),
 };
 
 const adsRequest = svc.counter(METRICS.adsRequest);
@@ -140,7 +143,8 @@ svc.app.get('/vast', async (req, res) => {
   await new Promise((r) => setTimeout(r, delay));
 
   const noFill = Math.random() >= knobs.fill_rate;
-  const pod = noFill ? [] : buildPod(availS);
+  const sellableS = availS * knobs.max_pod_ratio;
+  const pod = noFill ? [] : buildPod(sellableS);
   const podS = pod.reduce((sum, c) => sum + c.durationS, 0);
 
   adsPodDuration.set({ ads: ADS_ID, region }, podS);
@@ -164,7 +168,7 @@ svc.app.get('/vast', async (req, res) => {
 const admin = Router();
 admin.get('/knobs', (_req, res) => res.json(knobs));
 admin.post('/knobs', (req, res) => {
-  for (const k of ['latency_ms', 'jitter_ms', 'fill_rate'] as const) {
+  for (const k of ['latency_ms', 'jitter_ms', 'fill_rate', 'max_pod_ratio'] as const) {
     if (req.body?.[k] !== undefined) knobs[k] = Number(req.body[k]);
   }
   svc.log.warn('knobs updated', { ...knobs });

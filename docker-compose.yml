@@ -8,6 +8,7 @@ x-node-service: &node-service
     - ./packages:/app/packages
   environment: &node-env
     REDIS_URL: redis://redis:6379
+    PLAYOUT_URL: http://playout:3000
     ORIGIN_URL: http://origin
     PUBLIC_ORIGIN_URL: http://localhost:8080
     PACKAGER_URL: http://packager:3000

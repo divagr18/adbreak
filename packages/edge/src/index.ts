@@ -159,6 +159,18 @@ admin.delete('/faults', (_req, res) => {
   svc.log.warn('faults cleared', { cleared });
   res.json({ cleared });
 });
+// Per-fault removal so concurrent injections can revert independently.
+admin.delete('/faults/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const i = faults.findIndex((f) => f.id === id);
+  if (i === -1) {
+    res.status(404).json({ error: 'no such fault', id });
+    return;
+  }
+  faults.splice(i, 1);
+  svc.log.warn('fault cleared', { id });
+  res.json({ cleared: id });
+});
 svc.admin(admin);
 
 svc.start(Number(process.env.PORT ?? 3000));
