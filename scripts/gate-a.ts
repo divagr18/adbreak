@@ -71,7 +71,8 @@ async function main(): Promise<void> {
 
   // --- 2. sample the personalized manifest across the whole break ---------
   const adUris = new Set<string>();
-  let sawDiscontinuity = false;
+  let sawEnterBoundary = false;
+  let sawReturnBoundary = false;
   let worstSeqSkew = 0;
   const seqOf = (p: string) => {
     const m = /#EXT-X-MEDIA-SEQUENCE:(\d+)/.exec(p);
@@ -86,10 +87,15 @@ async function main(): Promise<void> {
       text(`${EDGE}/session/${DEMO_SESSION}/playlist.m3u8`),
       text(`${PACKAGER}/content/live.m3u8`),
     ]);
-    for (const line of session.split('\n')) {
-      if (line.startsWith('/seg/creatives/')) adUris.add(line);
+    // Both transitions need a discontinuity. A missing one on the way back to
+    // content is what actually rebuffers players at the end of a break.
+    const uris = session.split('\n').filter((l) => l.startsWith('/seg/') || l === '#EXT-X-DISCONTINUITY');
+    for (const line of uris) if (line.startsWith('/seg/creatives/')) adUris.add(line);
+    for (let i = 1; i < uris.length; i++) {
+      if (uris[i - 1] !== '#EXT-X-DISCONTINUITY') continue;
+      if (uris[i].startsWith('/seg/creatives/')) sawEnterBoundary = true;
+      if (uris[i].startsWith('/seg/content/')) sawReturnBoundary = true;
     }
-    if (session.includes('#EXT-X-DISCONTINUITY')) sawDiscontinuity = true;
     const [a, b] = [seqOf(session), seqOf(content)];
     if (a !== undefined && b !== undefined) worstSeqSkew = Math.max(worstSeqSkew, Math.abs(a - b));
     await sleep(2000);
@@ -101,7 +107,11 @@ async function main(): Promise<void> {
     adUris.size === 8,
     `${adUris.size} distinct ad segments: ${[...adUris].map((u) => u.split('/').slice(-2).join('/')).join(', ')}`,
   );
-  check('discontinuity marked at the content/ad boundary', sawDiscontinuity, 'EXT-X-DISCONTINUITY present');
+  check(
+    'discontinuity marked on both break boundaries',
+    sawEnterBoundary && sawReturnBoundary,
+    `content->ad ${sawEnterBoundary ? 'ok' : 'MISSING'}, ad->content ${sawReturnBoundary ? 'ok' : 'MISSING'}`,
+  );
   // SSAI and the packager poll independently, so the personalized manifest can
   // legitimately sit one segment behind. Anything beyond that means the stitcher
   // is rewriting the sequence rather than substituting segments in place.
