@@ -45,6 +45,23 @@ const SPAN_SAMPLE = Number(process.env.SPAN_SAMPLE ?? 0.02);
 
 const isTraced = (sessionId: string): boolean => sampled(sessionId, SPAN_SAMPLE);
 
+/** Quartile offsets, matching exactly when the player fires each event. */
+const EVENT_FRACTION: Record<string, number> = {
+  impression: 0,
+  start: 0,
+  firstQuartile: 0.25,
+  midpoint: 0.5,
+  thirdQuartile: 0.75,
+  complete: 1,
+};
+
+/** Run at a wall-clock moment; immediately if that moment has already passed. */
+function schedule(atMs: number, fn: () => void): void {
+  const delay = atMs - Date.now();
+  if (delay <= 0) fn();
+  else setTimeout(fn, delay).unref();
+}
+
 const availDecided = svc.counter(METRICS.availDecided);
 const slateSeconds = svc.counter(METRICS.slateSeconds);
 const stitchErrors = svc.counter(METRICS.stitchErrors);
@@ -248,24 +265,37 @@ async function decide(session: Session, cue: CueWindow): Promise<void> {
   // is worth. Counting here rather than at the player keeps the number honest
   // when the client never fires at all, and when the CDN blackholes the
   // beacon (F07) — the two cases that matter most.
+  //
+  // Each expectation is booked at the instant the beacon is *due*, not now.
+  // Booking at decision time put expected ~45s ahead of realized, so a sliding
+  // SLO window caught a different number of expected and realized bursts and
+  // the ratio swung +/-14% on a healthy plant — occasionally above 1.0, which
+  // realized/expected can never legitimately be. Ticking both counters at the
+  // same wall-clock moment is what makes the SLO readable at all.
   for (const c of creatives) {
+    const creativeStartMs = cue.startMs + c.offsetS * 1000;
     for (const ev of BEACON_EVENTS) {
-      beaconExpected.inc({
-        event: ev,
-        device_class: session.deviceClass,
-        cdn: session.cdn,
-        isp: session.isp,
-        region: session.region,
-      });
+      const dueMs = creativeStartMs + EVENT_FRACTION[ev] * c.durationS * 1000;
+      schedule(dueMs, () =>
+        beaconExpected.inc({
+          event: ev,
+          device_class: session.deviceClass,
+          cdn: session.cdn,
+          isp: session.isp,
+          region: session.region,
+        }),
+      );
     }
-    revenueExpected.inc(
-      {
-        channel: CHANNEL,
-        region: session.region,
-        advertiser: c.advertiser,
-        device_class: session.deviceClass,
-      },
-      impressionValueUsd(c.advertiser, session.region),
+    schedule(creativeStartMs, () =>
+      revenueExpected.inc(
+        {
+          channel: CHANNEL,
+          region: session.region,
+          advertiser: c.advertiser,
+          device_class: session.deviceClass,
+        },
+        impressionValueUsd(c.advertiser, session.region),
+      ),
     );
   }
   svc.log.info('avail decided', {
