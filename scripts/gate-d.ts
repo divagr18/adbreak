@@ -237,15 +237,27 @@ async function escalatesWhenUnmapped(): Promise<void> {
     | { executed?: boolean }
     | undefined;
 
+  // no_action covers two very different endings: the hypothesis was refuted,
+  // or it survived and nothing is mapped to it. Only the second is what this
+  // check claims to test, so read the plan step rather than the outcome alone -
+  // otherwise a run that talked itself out of a correct diagnosis passes as
+  // though it had escalated properly.
+  const planStep = run?.steps.find((s) => s.step === 'plan')?.output as
+    | { decision?: string }
+    | undefined;
+  const escalated = planStep?.decision === 'no runbook mapped to this failure class';
+
   check(
     'F08 has no runbook, so the agent escalates instead of improvising',
     run?.failureClass === 'F08' &&
       hypothesis?.stage === 'deliver' &&
       !run?.runbookId &&
       run?.outcome === 'no_action' &&
+      escalated &&
       actStep?.executed !== true,
     `truth=${truth?.fault ?? '?'} diagnosed=${run?.failureClass} stage=${hypothesis?.stage} ` +
-      `runbook=${run?.runbookId ?? 'none'} outcome=${run?.outcome}`,
+      `runbook=${run?.runbookId ?? 'none'} outcome=${run?.outcome} ` +
+      `decision="${planStep?.decision ?? 'none'}"`,
   );
   await fetch(`${CHAOS}/inject`, { method: 'DELETE' });
 }
