@@ -65,6 +65,52 @@ export interface AgentRun {
 
 const runbooks = loadRunbooks();
 
+/**
+ * How each runbook precondition is actually measured. Runbooks state their
+ * preconditions in shorthand; this is where that shorthand becomes PromQL and
+ * a threshold. An id with no entry here fails closed.
+ */
+const PRECONDITIONS: Record<
+  string,
+  { query: (device: string, window: string) => string; met: (v: number | null) => boolean }
+> = {
+  gap_is_real: {
+    query: (device, window) => M.impressionGap(device, window),
+    met: (v) => (v ?? 0) > 0.4,
+  },
+  scoped_not_global: {
+    query: (device, window) => M.impressionGapOthers(device, window),
+    met: (v) => (v ?? 1) < 0.1,
+  },
+  fill_collapsed: {
+    query: () => M.adsFillRatio(),
+    met: (v) => (v ?? 1) < 0.5,
+  },
+  fallback_available: {
+    query: () => M.adsFallbackReady(),
+    met: (v) => (v ?? 0) >= 1,
+  },
+  delivery_healthy: {
+    query: (_d, window) => M.cdn5xx(window),
+    met: (v) => (v ?? 1) === 0,
+  },
+};
+
+/** How each runbook's success is measured, and what counts as recovered. */
+const VERIFICATION: Record<
+  string,
+  { query: (device: string, window: string) => string; recovered: (v: number | null) => boolean }
+> = {
+  'rb-beacon-fallback': {
+    query: (device, window) => M.impressionGap(device, window),
+    recovered: (v) => v !== null && v < 0.05,
+  },
+  'rb-ads-failover': {
+    query: (_d, window) => M.slateSecondsRate(window),
+    recovered: (v) => v !== null && v < 1,
+  },
+};
+
 const nowIso = () => new Date().toISOString();
 
 const usageFields = (u: StepUsage, costMultiplier = 1) => ({
@@ -337,13 +383,29 @@ export async function runIncident(
     // Preconditions are the runbook's own statement of when it is safe to run.
     const preconditionResults = [];
     for (const p of runbook.preconditions) {
-      const promql =
-        p.id === 'gap_is_real'
-          ? M.impressionGap(vars.device, p.window)
-          : M.impressionGapOthers(vars.device, p.window);
+      const check = PRECONDITIONS[p.id];
+      if (!check) {
+        // Fail closed. A runbook naming a precondition this agent cannot
+        // evaluate must not be executed on the assumption it would have passed.
+        preconditionResults.push({
+          id: p.id,
+          expr: substitute(p.expr, vars),
+          promql: null,
+          value: null,
+          met: false,
+          note: 'unknown precondition id — failing closed',
+        });
+        continue;
+      }
+      const promql = check.query(vars.device, p.window);
       const value = await scalar(promql);
-      const met = p.id === 'gap_is_real' ? (value ?? 0) > 0.4 : (value ?? 1) < 0.1;
-      preconditionResults.push({ id: p.id, expr: substitute(p.expr, vars), promql, value, met });
+      preconditionResults.push({
+        id: p.id,
+        expr: substitute(p.expr, vars),
+        promql,
+        value,
+        met: check.met(value),
+      });
     }
     const preconditionsMet = preconditionResults.every((p) => p.met);
     const verdict = gate({ tier, eventMode: false, preconditionsMet, errorBudgetRemaining: 1 });
@@ -388,14 +450,21 @@ export async function runIncident(
     // as the runbook allows, plus a margin for the final query.
     t0 = begin('verify', runbook.verification.timeout_s * 1000 + 30_000);
     const deadline = Date.now() + runbook.verification.timeout_s * 1000;
+    const verifier = VERIFICATION[runbook.id];
+    const verifyQuery = verifier
+      ? verifier.query(vars.device, runbook.verification.window)
+      : M.impressionGap(vars.device, runbook.verification.window);
+    const isRecovered = verifier ? verifier.recovered : (v: number | null) => v !== null && v < 0.05;
+
     let gapNow: number | null = null;
     let recovered = false;
     const samples: { at: string; gap: number | null }[] = [];
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 10_000));
-      gapNow = await scalar(M.impressionGap(vars.device, runbook.verification.window));
+      supervisor?.assertAlive();
+      gapNow = await scalar(verifyQuery);
       samples.push({ at: nowIso(), gap: gapNow });
-      if (gapNow !== null && gapNow < 0.05) {
+      if (isRecovered(gapNow)) {
         recovered = true;
         break;
       }
@@ -406,7 +475,7 @@ export async function runIncident(
       recovered,
       residualGap: gapNow,
       window: runbook.verification.window,
-      query: M.impressionGap(vars.device, runbook.verification.window),
+      query: verifyQuery,
       samples,
     });
 

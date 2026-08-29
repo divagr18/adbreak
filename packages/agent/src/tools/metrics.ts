@@ -46,3 +46,10 @@ export const availSignalChain = (window = '10m'): string =>
 export const gapByDeviceCdn = (window = '5m'): string =>
   `1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event="impression"}[${window}])) ` +
   `/ clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event="impression"}[${window}])), 1))`;
+
+/** Slate seconds per second — how fast unsold inventory is accumulating. */
+export const slateSecondsRate = (window = '2m'): string =>
+  `sum(rate(adbreak_slate_seconds_total[${window}]))`;
+
+/** 1 when the SSAI holds a cached pod it could fall back to. */
+export const adsFallbackReady = (): string => `max(adbreak_ssai_ads_fallback_ready) or vector(0)`;

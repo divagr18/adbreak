@@ -1,0 +1,52 @@
+id: rb-ads-failover
+version: 1
+title: Serve cached backup inventory when the ad server stops filling
+applies_to: [F03, F04]
+# T2, not T1. This changes what EVERY viewer on the channel is served, not one
+# device class. A human approves that. The gate returns APPROVE and the agent
+# stops with the plan rendered - which is the correct behaviour, not a gap.
+blast_radius: T2
+
+preconditions:
+  - id: fill_collapsed
+    description: the ad server has stopped returning usable pods
+    expr: 'ads_fill_ratio < 0.5'
+    window: 3m
+  - id: fallback_available
+    description: there is a cached pod to serve, or this remediation would do nothing
+    expr: 'ads_fallback_ready == 1'
+    window: 5m
+  - id: delivery_healthy
+    description: delivery is fine, so this is an ad-decisioning fault and not a CDN one
+    expr: 'cdn_5xx == 0'
+    window: 5m
+
+predicted_impact:
+  rrr_delta: +0.8
+  description: >
+    Breaks that would have been slated are filled from the last pod that did
+    fill, with tracking retargeted to the current avail so the impressions are
+    genuinely billable.
+  risk: >
+    Cached creatives may be out of flight or mistargeted for the current
+    audience. Acceptable briefly against earning nothing; a human decides,
+    which is why this is T2.
+
+actions:
+  - type: config_patch
+    target: ssai
+    method: POST
+    path: /admin/ads-fallback
+    body: { mode: cached_pod }
+
+verification:
+  expr: 'slate_seconds_rate < 1'
+  window: 2m
+  timeout_s: 150
+
+rollback:
+  - type: config_patch
+    target: ssai
+    method: POST
+    path: /admin/ads-fallback
+    body: { mode: none }

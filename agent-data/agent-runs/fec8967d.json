@@ -1,0 +1,187 @@
+{
+  "runId": "fec8967d",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788018012906",
+    "channel": "sports-1",
+    "region": "eu",
+    "deviceClass": "roku",
+    "startedAt": "2026-08-29T15:22:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-29T15:40:12.935Z",
+      "durationMs": 26620,
+      "output": {
+        "severity": "major",
+        "suspectedStages": [
+          "decide"
+        ],
+        "affectedDimensions": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": null
+        },
+        "reasoning": "The 'ads_fill_ratio' is significantly low at 87.5%, which directly correlates with the observed 12.9% impression gap. This indicates that the 'decide' stage is failing to select ads for a substantial portion of ad opportunities, leading to the reported revenue leak. The similar impression gap for 'roku' and 'other' device classes suggests the issue is broad and not specific to the incident's device or region. No CDN errors ('cdn_5xx': 0) or stitching errors ('stitch_errors': 0) are present, and ad latency is normal, ruling out downstream issues."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 816,
+        "output": 171
+      },
+      "costUsd": 0.0006723,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"}[5m])), 1))",
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-29T15:40:39.555Z",
+      "durationMs": 19701,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"}[5m])), 1))",
+          "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}[5m])), 1))",
+          "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+          "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+          "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+          "avg(adbreak_ads_fill_ratio)",
+          "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+          "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+        ],
+        "findings": [
+          "A revenue leak of approximately 11.27 USD is confirmed.",
+          "An impression gap of about 12.94% is observed for the affected 'roku' devices. This gap is consistent across other device classes (13.01%), indicating a broader, non-device-specific issue.",
+          "The ad fill ratio is 87.5%, directly contributing to the impression gap and subsequent revenue loss by leaving 12.5% of ad opportunities unfulfilled.",
+          "CDN 5xx errors are zero, indicating healthy content delivery.",
+          "Stitching errors are zero, indicating the ad stitching component is functioning correctly.",
+          "P99 latency for ad responses is low (290ms), suggesting the ad decisioning system is responsive and not experiencing significant delays.",
+          "The 'signal_chain_divergence' metric is null, preventing an assessment of whether cue signaling is correctly propagating to manifested avails."
+        ],
+        "conclusion": "The ad-insertion signal chain components for packaging, stitching, and delivery are healthy, exhibiting no errors or significant latency. While the ad decisioning system is responsive, the 87.5% ad fill ratio points to insufficient ad inventory or sub-optimal decisioning effectiveness, causing the observed impression gap and revenue loss. As the core technical signal chain appears functional, the problem points towards ad inventory management, ad decisioning logic, or potential discrepancies further downstream in billing."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 768,
+        "output": 669
+      },
+      "costUsd": 0.0019029,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-29T15:40:39.555Z",
+      "durationMs": 19701,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [],
+        "findings": [
+          "No impression loss detected across any device class or CDN combination. All slices are healthy."
+        ],
+        "conclusion": "No fault detected. The incident does not appear to be caused by impression loss localized to a specific device class, CDN, or a combination of both."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 724,
+        "output": 85
+      },
+      "costUsd": 0.0004297,
+      "queries": [
+        "1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[5m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[5m])), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-29T15:40:59.256Z",
+      "durationMs": 26529,
+      "output": {
+        "failureClass": "F04",
+        "stage": "decide",
+        "cause": "The ad server fill rate is approximately 87.5%, resulting in a 12.5% impression gap due to empty VAST responses ('no-fill'). This accounts for the observed system-wide impression loss of ~13%.",
+        "confidence": 0.95,
+        "supportingEvidence": [
+          "The ad fill ratio is 0.875, which corresponds to a 12.5% rate of unfilled ad requests.",
+          "The impression gap for the affected slice (12.9%) and other slices (13.0%) are nearly identical and closely match the unfilled ad request rate.",
+          "CDN 5xx errors are zero, ruling out delivery issues.",
+          "Stitch errors are zero, ruling out media conditioning or stitching issues.",
+          "Ad server p99 latency is low (290ms), ruling out latency-induced timeouts."
+        ],
+        "scope": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": "eu"
+        },
+        "predictedSignature": "A low ad fill ratio (ads_fill_ratio < 1.0) that directly correlates with the impression gap across all dimensions, while other pipeline metrics like CDN errors and stitch errors remain at zero."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2229,
+        "output": 307
+      },
+      "costUsd": 0.00585625
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-29T15:41:25.785Z",
+      "durationMs": 16608,
+      "output": {
+        "survived": false,
+        "testsAttempted": [
+          "F01",
+          "F07",
+          "F08"
+        ],
+        "contradictions": [
+          "The hypothesis states the impression gap is nearly identical across all device classes (~13%), but the probe `other_device_classes_gap` is 0. This indicates the problem is isolated to one device class, not a system-wide issue caused by a global ad fill rate."
+        ],
+        "verdict": "Hypothesis refuted. The core claim of a system-wide gap driven by a global ad fill rate is directly contradicted by the `other_device_classes_gap` probe, which shows a value of 0. This proves the issue is localized to a specific device class and not the result of a universal ad server fill-rate problem."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1381,
+        "output": 190
+      },
+      "costUsd": 0.00362625,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-29T15:41:42.393Z",
+      "durationMs": 0,
+      "output": {
+        "decision": "no remediation - hypothesis did not survive falsification",
+        "contradictions": [
+          "The hypothesis states the impression gap is nearly identical across all device classes (~13%), but the probe `other_device_classes_gap` is 0. This indicates the problem is isolated to one device class, not a system-wide issue caused by a global ad fill rate."
+        ]
+      }
+    }
+  ],
+  "outcome": "no_action",
+  "costUsd": 0.0124874,
+  "detectedAt": "2026-08-29T15:40:12.934Z",
+  "failureClass": "F04"
+}

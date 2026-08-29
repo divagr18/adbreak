@@ -46,6 +46,11 @@ export function loadRunbooks(dir = RUNBOOK_DIR): Map<string, Runbook> {
  */
 export const RUNBOOK_FOR: Record<string, string | undefined> = {
   F07: 'rb-beacon-fallback',
+  F03: 'rb-ads-failover',
+  F04: 'rb-ads-failover',
+  // F08 is deliberately absent. A regional CDN 5xx has no safe automatic
+  // remedy in this topology, and inventing one would be theatre. The agent
+  // diagnoses it, finds nothing mapped, and escalates with its evidence.
 };
 
 const TARGETS: Record<string, string> = {

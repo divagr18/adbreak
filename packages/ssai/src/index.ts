@@ -34,6 +34,13 @@ const SEGMENT_S = Number(process.env.SEGMENT_S ?? 4);
 const SLATE_ID = 'slate';
 const SESSION_TTL_MS = 5 * 60_000;
 const COLLECTOR_URL = process.env.COLLECTOR_URL ?? 'http://beacon-collector:3000';
+/**
+ * The SSAI owes the player a manifest on a deadline, so a slow ad server is a
+ * no-fill as far as this break is concerned. Without a deadline an ADS latency
+ * spike (F03) merely makes decisions slow and costs no revenue at all - it
+ * could not breach the SLO, which made the fault untestable.
+ */
+const ADS_TIMEOUT_MS = Number(process.env.ADS_TIMEOUT_MS ?? 2000);
 
 /**
  * Per-device-class beacon emission mode — the surface `rb-beacon-fallback`
@@ -49,6 +56,17 @@ const COLLECTOR_URL = process.env.COLLECTOR_URL ?? 'http://beacon-collector:3000
  * session|avail|pos|creative|event, so leaving the client URLs in place cannot
  * double-bill, and a player on a healthy path keeps working untouched.
  */
+/**
+ * What to serve when the ad server gives us nothing. `none` slates the break,
+ * which is the honest default: unsold inventory is unsold. `cached_pod` serves
+ * the last pod that did fill - real backup-inventory behaviour, and the surface
+ * rb-ads-failover actuates.
+ */
+type AdsFallbackMode = 'none' | 'cached_pod';
+let adsFallbackMode: AdsFallbackMode = (process.env.ADS_FALLBACK_MODE as AdsFallbackMode) ?? 'none';
+/** Last pod that filled, keyed by avail duration. */
+const lastGoodPod = new Map<number, ParsedAd[]>();
+
 type BeaconMode = 'client_side' | 'server_side';
 const beaconMode = new Map<string, BeaconMode>();
 const modeFor = (deviceClass: string): BeaconMode =>
@@ -95,6 +113,30 @@ async function fireServerSide(clientUrl: string, sessionId: string, event: strin
   }
 }
 
+/**
+ * Point a cached pod's tracking URLs at the break we are serving now.
+ *
+ * Tracking URLs are minted by the ad server with session, availId and pos
+ * already inside them, and the collector deduplicates on exactly that tuple.
+ * Replaying a cached pod verbatim would therefore carry the PREVIOUS avail's
+ * identifiers, every beacon would be discarded as a duplicate, and the
+ * remediation would appear to run while earning nothing at all.
+ */
+export function retarget(
+  tracking: Record<string, string>,
+  availId: string,
+  sessionId: string,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(tracking).map(([ev, url]) => {
+      const u = new URL(url);
+      u.searchParams.set('availId', availId);
+      u.searchParams.set('session', sessionId);
+      return [ev, u.toString()];
+    }),
+  );
+}
+
 /** Run at a wall-clock moment; immediately if that moment has already passed. */
 function schedule(atMs: number, fn: () => void): void {
   const delay = atMs - Date.now();
@@ -108,6 +150,22 @@ const stitchErrors = svc.counter(METRICS.stitchErrors);
 const manifestLatency = svc.histogram(METRICS.manifestLatency);
 const beaconExpected = svc.counter(METRICS.beaconExpected);
 const revenueExpected = svc.counter(METRICS.revenueExpected);
+/**
+ * Whether a cached pod exists to fall back to. Without this the runbook can be
+ * approved and executed against a cold cache, doing nothing at all while
+ * reporting success - the precondition exists to make that impossible.
+ */
+const adsFallbackReady = svc.gauge({
+  name: 'adbreak_ssai_ads_fallback_ready',
+  help: '1 when a last-good ad pod is cached and could be served',
+  labels: [] as const,
+});
+/** Pods served from cache because the ad server returned nothing. */
+const adsFallbackServed = svc.counter({
+  name: 'adbreak_ssai_ads_fallback_served_total',
+  help: 'Ad pods served from the last-good cache instead of slate',
+  labels: ['channel', 'region'] as const,
+});
 /** Server-side beacon emission, so the remediation's effect is observable. */
 const serverBeacons = svc.counter({
   name: 'adbreak_ssai_server_beacons_total',
@@ -240,12 +298,26 @@ async function decide(session: Session, cue: CueWindow): Promise<void> {
   // auto-instrumentation: ESM hoists every import, so express and http are
   // already loaded by the time startTracing() runs and the patch cannot be
   // relied on. Being explicit also makes ads.respond a real child of this span.
-  const fetchVast = async (traceparent?: string) =>
-    parseVast(
-      await fetch(`${ADS_URL}/vast?${q}`, {
+  const fetchVast = async (traceparent?: string): Promise<ParsedAd[]> => {
+    try {
+      const res = await fetch(`${ADS_URL}/vast?${q}`, {
         headers: traceparent ? { traceparent } : {},
-      }).then((r) => r.text()),
-    );
+        signal: AbortSignal.timeout(ADS_TIMEOUT_MS),
+      });
+      return parseVast(await res.text());
+    } catch (err) {
+      // A deadline miss is a no-fill for this break: we cannot hold the
+      // manifest waiting. This is what turns an ADS latency spike into a
+      // revenue event rather than merely a slow one.
+      svc.log.warn('ads request failed or timed out, treating as no-fill', {
+        avail_id: cue.availId,
+        session_id: session.id,
+        timeout_ms: ADS_TIMEOUT_MS,
+        err: String(err),
+      });
+      return [];
+    }
+  };
   const ads = traced
     ? await inSpan(
         'decision.request',
@@ -255,10 +327,27 @@ async function decide(session: Session, cue: CueWindow): Promise<void> {
       )
     : await fetchVast();
 
+  // Remember what a good pod looks like, so there is something to fall back to.
+  if (ads.length > 0) {
+    lastGoodPod.set(cue.durationS, ads);
+    adsFallbackReady.set({}, 1);
+  }
+
+  let pod = ads;
+  let servedFromCache = false;
+  if (pod.length === 0 && adsFallbackMode === 'cached_pod') {
+    const cached = lastGoodPod.get(cue.durationS);
+    if (cached?.length) {
+      pod = cached.map((ad) => ({ ...ad, tracking: retarget(ad.tracking, cue.availId, session.id) }));
+      servedFromCache = true;
+      adsFallbackServed.inc({ channel: CHANNEL, region: session.region });
+    }
+  }
+
   const slots: string[] = [];
   const creatives: PodCreative[] = [];
   let offsetS = 0;
-  for (const ad of ads) {
+  for (const ad of pod) {
     const segs = await segmentsFor(ad.id);
     slots.push(...segs);
     creatives.push({
@@ -365,6 +454,7 @@ async function decide(session: Session, cue: CueWindow): Promise<void> {
     creatives: creatives.map((c) => c.id),
     slate_s: slateS,
     traced,
+    served_from_cache: servedFromCache,
   });
 }
 
@@ -535,6 +625,14 @@ svc.app.get('/session/:id/tracking', (req, res) => {
 });
 
 const admin = Router();
+admin.get('/ads-fallback', (_req, res) =>
+  res.json({ mode: adsFallbackMode, cachedDurations: [...lastGoodPod.keys()] }),
+);
+admin.post('/ads-fallback', (req, res) => {
+  adsFallbackMode = req.body?.mode === 'cached_pod' ? 'cached_pod' : 'none';
+  svc.log.warn('ads fallback mode changed', { mode: adsFallbackMode });
+  res.json({ mode: adsFallbackMode });
+});
 admin.get('/beacon-mode', (_req, res) => res.json(Object.fromEntries(beaconMode)));
 admin.post('/beacon-mode', (req, res) => {
   const deviceClass = String(req.body?.device_class ?? '');

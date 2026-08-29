@@ -1,0 +1,194 @@
+{
+  "runId": "45faca1b",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788018439892",
+    "channel": "sports-1",
+    "region": "eu",
+    "deviceClass": "roku",
+    "startedAt": "2026-08-29T15:22:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-29T15:47:19.983Z",
+      "durationMs": 16990,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "package",
+          "decide",
+          "deliver"
+        ],
+        "affectedDimensions": {
+          "deviceClass": "roku",
+          "cdn": null,
+          "region": "eu"
+        },
+        "reasoning": "The Revenue Realization Rate (RRR) is 0, indicating a complete failure to monetize the incident's defined scope (region: eu, deviceClass: roku). This is primarily driven by an extremely low ad fill ratio (0.078%), pointing to a critical failure in the 'package' (ad request) or 'decide' (ad decisioning) stages where ads are not being sourced or selected. Additionally, a significant number of CDN 5xx errors (324.25) suggests issues in the 'deliver' stage, which would prevent any ads from reaching the client even if they were decided. The impression gap is similar across all device classes, suggesting it's not the primary cause of the Roku-specific RRR=0."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 833,
+        "output": 237
+      },
+      "costUsd": 0.0008423999999999999,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"}[5m])), 1))",
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-29T15:47:36.974Z",
+      "durationMs": 11720,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"}[5m])), 1))",
+          "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}[5m])), 1))",
+          "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+          "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+          "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+          "avg(adbreak_ads_fill_ratio)",
+          "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+          "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+        ],
+        "findings": [
+          "A revenue leak of approximately 2.86 USD is confirmed.",
+          "The ad fill ratio is extremely low (0.08%), indicating a significant problem with ad decisioning or ad inventory availability.",
+          "A substantial number of CDN 5xx errors (324.25) are present, suggesting issues with ad content delivery.",
+          "Impression gaps are observed for the affected device class (approximately 7.8%) and are very similar for other device classes (approximately 7.7%), suggesting the issue is not device-specific.",
+          "No ad stitching errors were detected.",
+          "The P99 ad decisioning latency is low (approximately 0.2 seconds), indicating that the ad server's response time is not a primary factor."
+        ],
+        "conclusion": "The data shows a critical problem within the signal chain: an extremely low ad fill ratio indicates ad decisioning or inventory issues, and significant CDN 5xx errors point to delivery failures. This directly accounts for the observed impression gaps and revenue leak. The problem is definitively within the signal chain, ruling out a healthy signal chain pointing downstream to billing issues."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 785,
+        "output": 606
+      },
+      "costUsd": 0.0017504999999999999,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-29T15:47:36.974Z",
+      "durationMs": 11720,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [
+          "Determine all unique device_class values.",
+          "Determine all unique cdn values.",
+          "Group impression loss by device_class.",
+          "Group impression loss by cdn.",
+          "Identify slices with 'fraction_of_impressions_lost' significantly greater than 0.0.",
+          "Identify slices with 'fraction_of_impressions_lost' equal to 0.0."
+        ],
+        "findings": [
+          "All device classes (android, firetv, ios, roku, smarttv, web) associated with cdn-east are losing 7.89% of impressions.",
+          "All device classes (android, firetv, ios, roku, smarttv, web) associated with cdn-west are losing 7.89% of impressions.",
+          "There are no healthy slices identified where 'fraction_of_impressions_lost' is 0.0."
+        ],
+        "conclusion": "The fault is neither scoped to a specific device class nor a specific CDN. A consistent loss of 7.89% of impressions is observed across all device classes and both CDNs, indicating a widespread systemic issue."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 784,
+        "output": 273
+      },
+      "costUsd": 0.0009177,
+      "queries": [
+        "1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[5m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[5m])), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-29T15:47:48.694Z",
+      "durationMs": 21916,
+      "output": {
+        "failureClass": "F04",
+        "stage": "decide",
+        "cause": "The ad server is consistently failing to provide ad creatives (no-fill), as evidenced by a near-zero ad fill ratio. This upstream failure is causing a widespread loss of impressions.",
+        "confidence": 1,
+        "supportingEvidence": [
+          "The ad fill ratio is exceptionally low at 0.08%, indicating a severe ad decisioning or inventory availability problem.",
+          "A uniform impression loss of ~7.9% is observed across all device classes and all CDNs, which points to a central, systemic failure rather than a dimension-specific issue.",
+          "While a high number of CDN 5xx errors were observed, the uniformity of the impression loss across different CDNs suggests these errors are a downstream symptom of the no-fill issue, not the root cause.",
+          "Ad decisioning latency is low and there are no stitch errors, ruling out ad-server performance or stitching as the cause."
+        ],
+        "scope": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": "eu"
+        },
+        "predictedSignature": "ads_fill_ratio < 0.01 AND uniform fraction_of_impressions_lost across all device classes and CDNs"
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2431,
+        "output": 295
+      },
+      "costUsd": 0.00598875
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-29T15:48:10.611Z",
+      "durationMs": 20896,
+      "output": {
+        "survived": false,
+        "testsAttempted": [
+          "F08"
+        ],
+        "contradictions": [
+          "The hypothesis of F04 (no-fill) is contradicted by the `cdn_5xx` probe value of 324.24. A no-fill from the ad server means no ad segments would be requested from the CDN, so CDN errors for ad delivery should be near zero."
+        ],
+        "verdict": "The hypothesis is refuted. While the `ads_fill_ratio` is extremely low, suggesting a no-fill issue, the extremely high rate of `cdn_5xx` errors (324.24) is a direct contradiction. If the ad server returned no ads (F04), players would not attempt to fetch ad segments from the CDN, and thus CDN delivery errors would not occur. The presence of these errors strongly indicates that F08 (regional CDN 5xx on segment delivery) is a significant causal factor, invalidating the hypothesis that the problem is exclusively F04."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1526,
+        "output": 234
+      },
+      "costUsd": 0.0042474999999999995,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-29T15:48:31.507Z",
+      "durationMs": 0,
+      "output": {
+        "decision": "no remediation - hypothesis did not survive falsification",
+        "contradictions": [
+          "The hypothesis of F04 (no-fill) is contradicted by the `cdn_5xx` probe value of 324.24. A no-fill from the ad server means no ad segments would be requested from the CDN, so CDN errors for ad delivery should be near zero."
+        ]
+      }
+    }
+  ],
+  "outcome": "no_action",
+  "costUsd": 0.01374685,
+  "detectedAt": "2026-08-29T15:47:19.983Z",
+  "failureClass": "F04"
+}
