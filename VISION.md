@@ -615,6 +615,41 @@ All nine steps, budget-conscious:
 
 ### Phase D — the twist, then breadth (Days 11–12, Sep 6–7)
 
+> **Status (29 Aug): Gate C passed 14/14 on the live plant.**
+> MTTD to remediation 83.7s, to verified recovery 144.9s, $0.0193 per incident,
+> zero false remediations across the control window. The watchdog is verified
+> against the live agent, F03/F04 map to `rb-ads-failover`, and the T2 approval
+> loop is closed: a held plan can be approved from its own trace page, and
+> approval re-measures the preconditions against live telemetry before it
+> executes anything.
+>
+> Gates B and C each failed several times before passing, and **almost every
+> failure was in the instrument rather than in the system**. That pattern is
+> the most useful thing this phase produced:
+> - **Do not verify recovery on a sliding window — it still contains the
+>   incident.** The 2m impression gap could not fall below 5% until the
+>   blackholed break aged out, up to 240s against a 150s timeout, so the agent
+>   rolled back a fix that had actually worked. An earlier pass at 110.7s was
+>   partly luck: that remediation happened to land mid-break. Verification now
+>   baselines the counters when the fix lands and judges the **delta since**.
+> - **A metric that cannot answer the question will be used to answer it
+>   anyway.** `adbreak_ads_fill_ratio` is pod *seconds* over avail seconds, so a
+>   healthy 28s pod in a 32s avail reads 0.875 forever. Nothing reported whether
+>   the ad server had returned an empty VAST. The agent diagnosed F07 correctly,
+>   read 0.875 as a 12.5% no-fill, concluded the fault was upstream and refuted
+>   itself. F04 now has its own signal, zero when healthy.
+> - **A check that does not assert what its name claims will pass while the
+>   thing it names is broken.** Gate C's "revenue recovered while the fault was
+>   still injected" only ever asserted that the fault was still injected. It
+>   showed green through a run where nothing recovered at all.
+> - **MTTR has a floor set by the plant, not by the agent.** Recovery cannot be
+>   observed before the next break runs, so with a 120s cadence the honest
+>   bound is ~240s. Detect-to-remediate is the agent's real contribution and is
+>   reported separately.
+> - **`increase()` over bursty counters is window-sensitive.** The same healthy
+>   gap reads ~0.000 at 2m/3m/4m and −0.13 at 6m. Preconditions declare 3m and
+>   are clean; worth knowing before trusting any single window.
+
 Strict priority order — stop wherever the clock stops:
 
 1. **Watchdog** (three deterministic rules) + agent self-telemetry + Agent Fleet Health dashboard + the on-camera agent-fault demo. Highest remaining value-per-hour on the board.
