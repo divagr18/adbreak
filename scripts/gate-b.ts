@@ -144,10 +144,16 @@ async function main(): Promise<void> {
   const deadline = Date.now() + 20 * 60_000;
   for (;;) {
     [rrrVictim0, rrrOthers0, cdn5xx0] = await mcpQuery([RRR(VICTIM), RRR_OTHERS, CDN_5XX]);
-    const healthy = (rrrVictim0 ?? 0) > 0.9 && (rrrOthers0 ?? 0) >= 0.98;
+    // Bound the ratio on BOTH sides. Realized can never legitimately exceed
+    // expected, so anything above ~1.02 is proof the window is inconsistent —
+    // typically a restart that dropped scheduled expectations while the
+    // beacons they were paired with still arrived. Accepting it once let the
+    // gate measure a corrupt baseline and report a negative revenue leak.
+    const settled = (v: number | null) => v !== null && v > 0.9 && v < 1.02;
+    const healthy = settled(rrrVictim0) && settled(rrrOthers0) && (cdn5xx0 ?? 1) === 0;
     if (healthy || Date.now() > deadline) break;
     console.log(
-      `  ${VICTIM} RRR ${fmt(rrrVictim0)}, others ${fmt(rrrOthers0)} — waiting for a settled window...`,
+      `  ${VICTIM} RRR ${fmt(rrrVictim0)}, others ${fmt(rrrOthers0)}, 5xx ${fmt(cdn5xx0)} — waiting for a settled window...`,
     );
     await sleep(30_000);
   }
@@ -158,9 +164,9 @@ async function main(): Promise<void> {
     `RRR ${VICTIM}=${fmt(rrrVictim0)}, others=${fmt(rrrOthers0)}, cdn 5xx=${fmt(cdn5xx0)}`,
   );
   check(
-    'baseline: revenue is being realized',
-    (rrrVictim0 ?? 0) > 0.9,
-    `${VICTIM} RRR ${fmt(rrrVictim0)} before any fault`,
+    'baseline: revenue is being realized, window consistent',
+    (rrrVictim0 ?? 0) > 0.9 && (rrrVictim0 ?? 9) < 1.02,
+    `${VICTIM} RRR ${fmt(rrrVictim0)} before any fault (must sit in 0.9..1.02)`,
   );
 
   console.log(`\ninjecting F07 (beacon blackhole, device_class=${VICTIM})...`);
