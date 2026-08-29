@@ -7,7 +7,7 @@ import {
   checkRunaway,
   checkStall,
   historyFrom,
-  p95,
+  typicalMs,
   stallThresholdMs,
 } from './watchdog.js';
 
@@ -16,9 +16,25 @@ describe('stall detection', () => {
     expect(stallThresholdMs([])).toBe(DEFAULTS.stallFloorMs);
   });
 
-  it('judges a step against 3x its own p95 once history exists', () => {
+  it('judges a step against a multiple of its own typical duration', () => {
     const history = Array.from({ length: 20 }, () => 60_000);
-    expect(stallThresholdMs(history)).toBe(180_000);
+    expect(stallThresholdMs(history)).toBe(60_000 * DEFAULTS.stallTypicalMultiple);
+  });
+
+  /**
+   * The regression that let a 242s stall through unnoticed on the live agent.
+   *
+   * The baseline used to be p95, which selects the very outliers the rule
+   * exists to catch: two earlier stall tests in an otherwise 13-41s history
+   * pushed the triage p95 to 242s and the threshold to 726s. Each stall raised
+   * the bar for detecting the next, so the detector blinded itself.
+   */
+  it('is not desensitised by the stalls it is meant to detect', () => {
+    const normal = Array.from({ length: 18 }, () => 25_000);
+    const poisoned = [...normal, 220_000, 242_000];
+    // A central statistic cannot be dragged by the tail it is detecting.
+    expect(stallThresholdMs(poisoned)).toBeLessThan(200_000);
+    expect(checkStall('triage', 242_000, poisoned).kill).toBe(true);
   });
 
   it('never lets a fast step produce an absurdly tight budget', () => {
@@ -29,14 +45,26 @@ describe('stall detection', () => {
   });
 
   it('kills a step that overruns its budget', () => {
-    const v = checkStall('correlate', 200_000, Array.from({ length: 20 }, () => 60_000));
+    const v = checkStall('correlate', 500_000, Array.from({ length: 20 }, () => 60_000));
     expect(v.kill).toBe(true);
     expect(v.reason).toBe('stall');
   });
 
-  it('computes p95 from an empty and a populated set', () => {
-    expect(p95([])).toBeNull();
-    expect(p95([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])).toBe(10);
+  it('computes the typical duration from an empty, odd and even set', () => {
+    expect(typicalMs([])).toBeNull();
+    expect(typicalMs([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])).toBe(5.5);
+    expect(typicalMs([1, 2, 3, 4, 5])).toBe(3);
+  });
+});
+
+describe('history', () => {
+  it('does not learn normal durations from runs the watchdog stopped', () => {
+    const h = historyFrom([
+      { outcome: 'remediated', steps: [{ step: 'triage', durationMs: 25_000 }] },
+      { outcome: 'killed_by_watchdog', steps: [{ step: 'triage', durationMs: 240_000 }] },
+      { outcome: 'remediated', steps: [{ step: 'triage', durationMs: 30_000 }] },
+    ]);
+    expect(h.get('triage')).toEqual([25_000, 30_000]);
   });
 });
 

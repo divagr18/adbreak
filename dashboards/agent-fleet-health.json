@@ -1,26 +1,43 @@
 {
   "uid": "adbreak-agent",
-  "title": "AdBreak — Agent Fleet Health",
-  "description": "The agent is watched by the same stack it operates. Every run, step, token, dollar and intervention lands here — including the times its own supervisor had to stop it.",
-  "tags": ["adbreak", "agent"],
+  "title": "AdBreak \u2014 Agent Fleet Health",
+  "description": "The agent is watched by the same stack it operates. Every run, step, token, dollar and intervention lands here \u2014 including the times its own supervisor had to stop it.",
+  "tags": [
+    "adbreak",
+    "agent"
+  ],
   "timezone": "browser",
   "refresh": "10s",
-  "time": { "from": "now-3h", "to": "now" },
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
   "panels": [
     {
       "id": 1,
       "type": "stat",
       "title": "Watchdog interventions",
-      "description": "Runs the agent's own supervisor terminated. Not zero by design — it is exercised.",
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "description": "Runs the agent's own supervisor terminated. Not zero by design \u2014 it is exercised.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 1 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
             ]
           }
         }
@@ -37,8 +54,17 @@
       "id": 2,
       "type": "stat",
       "title": "Runs remediated",
-      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
-      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
       "targets": [
         {
           "refId": "A",
@@ -52,8 +78,18 @@
       "type": "stat",
       "title": "Total model spend",
       "description": "Cost of every incident the agent has handled.",
-      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
-      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 4 } },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4
+        }
+      },
       "targets": [
         {
           "refId": "A",
@@ -66,7 +102,12 @@
       "id": 4,
       "type": "stat",
       "title": "Cost per incident",
-      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "currencyUSD",
@@ -74,9 +115,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 0.15 },
-              { "color": "red", "value": 0.5 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.15
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
             ]
           }
         }
@@ -93,9 +143,24 @@
       "id": 5,
       "type": "timeseries",
       "title": "Runs by outcome",
-      "description": "remediated · no_action · awaiting_approval · blocked · killed_by_watchdog",
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 5 },
-      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 15, "stacking": { "mode": "normal" } } } },
+      "description": "remediated \u00b7 no_action \u00b7 awaiting_approval \u00b7 blocked \u00b7 killed_by_watchdog",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 15,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        }
+      },
       "targets": [
         {
           "refId": "A",
@@ -108,9 +173,24 @@
       "id": 6,
       "type": "timeseries",
       "title": "Watchdog interventions by reason",
-      "description": "stall — a step overran its budget · loop — the same call three times · runaway — spend past the ceiling",
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 5 },
-      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 20, "stacking": { "mode": "normal" } } } },
+      "description": "stall \u2014 a step overran its budget \u00b7 loop \u2014 the same call three times \u00b7 runaway \u2014 spend past the ceiling",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 20,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        }
+      },
       "targets": [
         {
           "refId": "A",
@@ -122,15 +202,29 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Step duration p95",
-      "description": "What the stall rule is judged against — 3x a step's own p95, floored at 90s.",
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 14 },
-      "fieldConfig": { "defaults": { "unit": "s" } },
+      "title": "Step duration, typical and tail",
+      "description": "The stall rule is judged against 6x a step's MEDIAN duration, floored at 90s - not its p95, which selects the very outliers the rule exists to catch. Both are plotted so the gap between them is visible.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
       "targets": [
         {
           "refId": "A",
           "expr": "histogram_quantile(0.95, sum by (le, step) (rate(adbreak_agent_step_duration_seconds_bucket[30m])))",
           "legendFormat": "{{step}}"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.5, sum by (le, step) (rate(adbreak_agent_step_duration_seconds_bucket[30m])))",
+          "legendFormat": "{{step}} median"
         }
       ]
     },
@@ -138,8 +232,17 @@
       "id": 8,
       "type": "heatmap",
       "title": "Step duration distribution",
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 14 },
-      "fieldConfig": { "defaults": { "unit": "s" } },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
       "targets": [
         {
           "refId": "A",
@@ -153,8 +256,17 @@
       "id": 9,
       "type": "timeseries",
       "title": "Tokens by model and step",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
-      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 23
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
       "targets": [
         {
           "refId": "A",
@@ -168,8 +280,17 @@
       "type": "timeseries",
       "title": "Detection and recovery time",
       "description": "MTTD: alert fired to agent picking it up. MTTR: detection to verified recovery.",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
-      "fieldConfig": { "defaults": { "unit": "s" } },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 23
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
       "targets": [
         {
           "refId": "A",
@@ -187,8 +308,17 @@
       "id": 11,
       "type": "timeseries",
       "title": "Remediations by runbook, tier and outcome",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 31 },
-      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
       "targets": [
         {
           "refId": "A",
