@@ -12,8 +12,8 @@ preconditions:
     # No-fill RATE, not the pod-seconds ratio. The latter reads 0.875 on a
     # perfectly healthy plant (a 28s pod in a 32s avail), so thresholding it
     # would have fired on normal operation.
-    description: the ad server has stopped returning usable pods
-    expr: 'ads_nofill_rate > 0.5'
+    description: the ad server has stopped returning usable pods (healthy baseline is exactly 0)
+    expr: 'ads_nofill_rate > 0.25'
     window: 3m
   - id: fallback_available
     description: there is a cached pod to serve, or this remediation would do nothing

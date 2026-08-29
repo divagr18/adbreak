@@ -89,8 +89,15 @@ const PRECONDITIONS: Record<
   fill_collapsed: {
     // No-fill rate, not the pod-seconds ratio: the latter reads 0.875 on a
     // healthy plant, so thresholding it would have been an accident waiting.
+    //
+    // 0.25, not 0.5. The healthy baseline is exactly 0.000 - no ad request on a
+    // well plant ever returns an empty VAST - so a quarter of all requests
+    // coming back empty is already an unambiguous collapse and cannot happen by
+    // accident. Demanding half also raced the measurement: the rate is computed
+    // over 5m, so a TOTAL no-fill only reads 0.5 after two and a half minutes,
+    // and a run that evaluated at exactly 0.5 was blocked by `> 0.5`.
     query: () => M.adsNoFillRate(),
-    met: (v) => (v ?? 0) > 0.5,
+    met: (v) => (v ?? 0) > 0.25,
   },
   fallback_available: {
     query: () => M.adsFallbackReady(),
@@ -451,7 +458,17 @@ export async function runIncident(
         'For each competing failure class, name the signal that would have to be present',
         'if that class were the true cause, then check the probe values supplied.',
         'Refer to a class only by an id from that list, with its correct meaning.',
-        'If a probe contradicts the hypothesis, say so and set survived=false.',
+        'The probes are re-read live, seconds to minutes after the hypothesis was',
+        'formed, and every rate here is computed over a sliding window. A probe that',
+        'has MOVED since the hypothesis quoted it is not by itself a contradiction:',
+        'a fault that is still ramping makes its own signal climb, so a no-fill rate',
+        'quoted at 0.33 and now reading 0.5, or a gap quoted at 0.4 and now at 0.8,',
+        'CORROBORATES the hypothesis rather than refuting it. Only a probe that has',
+        'moved AGAINST what the hypothesis predicts - the signal collapsing back',
+        'toward its healthy baseline, or the evidence pointing at a different stage -',
+        'counts as a contradiction. Judge the direction and the meaning, never the',
+        'mere fact that a number differs from the one quoted.',
+        'If a probe genuinely contradicts the hypothesis, say so and set survived=false.',
         'Only set survived=true if you genuinely could not kill it. Return JSON only.',
       ].join(' '),
       input: { hypothesis: hypothesis.output, probes, evidence },
