@@ -257,6 +257,22 @@ svc.app.post('/alert', (req, res) => {
 });
 
 const admin = Router();
+/**
+ * Clear post-remediation suppression. An operator needs this when a fault
+ * recurs inside the cooldown and they want the agent to look again; the eval
+ * harness needs it so back-to-back scenarios are not silently skipped.
+ */
+admin.delete('/cooldown', (_req, res) => {
+  const cleared = remediatedUntil.size;
+  remediatedUntil.clear();
+  svc.log.warn('remediation cooldown cleared', { cleared });
+  res.json({ cleared });
+});
+admin.get('/cooldown', (_req, res) =>
+  res.json(
+    Object.fromEntries([...remediatedUntil].map(([k, v]) => [k, new Date(v).toISOString()])),
+  ),
+);
 admin.get('/agent-chaos', (_req, res) => res.json(agentChaos));
 admin.post('/agent-chaos', (req, res) => {
   const mode = req.body?.mode;

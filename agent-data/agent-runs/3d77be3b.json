@@ -1,0 +1,187 @@
+{
+  "runId": "3d77be3b",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788020653107",
+    "channel": "sports-1",
+    "region": "eu",
+    "deviceClass": "firetv",
+    "startedAt": "2026-08-29T16:16:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-29T16:24:13.132Z",
+      "durationMs": 26540,
+      "output": {
+        "severity": "major",
+        "suspectedStages": [
+          "decide",
+          "package",
+          "play",
+          "beacon"
+        ],
+        "affectedDimensions": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": null
+        },
+        "reasoning": "The incident is classified as major due to a consistent 13-14% impression gap across all device classes, leading to a measurable revenue leak ($30.33). The primary suspect is the 'decide' stage, indicated by an ad fill ratio of 87.5%, meaning 12.5% of ad opportunities are not being filled. This directly contributes to the impression gap. Further investigation should also include the 'package' stage for potential issues in preparing ad assets after a successful decision. The 'play' stage is also a suspect for client-side rendering problems that might prevent ads from being shown and beacons fired, contributing to any remaining gap between ad fill and observed impressions. The 'beacon' stage is essential for verifying impression counts and should be checked for reporting accuracy, though the root cause is likely upstream. No CDN 5xx errors or stitching errors were observed. The problem is general and not specific to any device class, CDN, or isolated region based on available metrics."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 820,
+        "output": 286
+      },
+      "costUsd": 0.000961,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"firetv\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"firetv\"}[5m])), 1))",
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"firetv\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"firetv\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-29T16:24:39.672Z",
+      "durationMs": 8712,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"firetv\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"firetv\"}[5m])), 1))",
+          "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"firetv\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"firetv\"}[5m])), 1))",
+          "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+          "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+          "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+          "avg(adbreak_ads_fill_ratio)",
+          "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+          "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+        ],
+        "findings": [
+          "There is a confirmed revenue leak of 30.33 USD.",
+          "The impression gap for the affected device class (firetv) is 13.5%, which is comparable to the 13.8% gap observed for other device classes, suggesting a systemic issue rather than device-specific failure.",
+          "The ad fill ratio is 87.5%, meaning 12.5% of ad opportunities are not being filled, contributing to the overall impression gap.",
+          "P99 ad decisioning latency is 199ms, which is within acceptable operational limits.",
+          "No CDN 5xx errors are observed.",
+          "No ad stitching errors are observed."
+        ],
+        "conclusion": "The ad-insertion signal chain, encompassing cue signalling, packaging, ad decisioning, stitching, and delivery components, appears healthy with no critical errors or excessive latency. Specifically, CDN delivery and ad stitching are functioning correctly. While there is an impression gap primarily due to an 87.5% ad fill ratio, this appears to be a baseline condition rather than an incident-specific failure of the signal chain components. Therefore, the revenue loss points downstream, indicating a likely issue with billing or revenue reconciliation."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 772,
+        "output": 627
+      },
+      "costUsd": 0.0017990999999999999,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-29T16:24:39.672Z",
+      "durationMs": 8712,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [],
+        "findings": [
+          "No impression loss observed across any device class or CDN slice.",
+          "All slices (device_class: android, cdn: cdn-east; device_class: firetv, cdn: cdn-east; device_class: ios, cdn: cdn-east; device_class: roku, cdn: cdn-east; device_class: smarttv, cdn: cdn-east; device_class: web, cdn: cdn-east; device_class: android, cdn: cdn-west; device_class: firetv, cdn: cdn-west; device_class: ios, cdn: cdn-west; device_class: roku, cdn: cdn-west; device_class: smarttv, cdn: cdn-west; device_class: web, cdn: cdn-west) are healthy with 0.0 fraction_of_impressions_lost."
+        ],
+        "conclusion": "The fault is scoped to neither a device class nor a CDN, as no impression loss is detected in the provided data."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 725,
+        "output": 268
+      },
+      "costUsd": 0.0008875,
+      "queries": [
+        "1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[5m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[5m])), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-29T16:24:48.384Z",
+      "durationMs": 22536,
+      "output": {
+        "failureClass": "F04",
+        "stage": "decide",
+        "cause": "The system-wide impression loss is caused by a low ad fill rate of 87.5%. This means 12.5% of ad opportunities are resulting in a 'no-fill' from the ad server, which directly corresponds to the observed ~13.5% impression gap across all devices.",
+        "confidence": 0.95,
+        "supportingEvidence": [
+          "The ad fill ratio is 0.875, indicating a 12.5% no-fill rate.",
+          "The impression gap for the affected device class (13.5%) and other device classes (13.8%) are nearly identical and closely match the no-fill rate, indicating a systemic issue.",
+          "Health metrics for other stages are normal: CDN 5xx errors are 0, stitch errors are 0, and ad decision latency is low (199ms)."
+        ],
+        "scope": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": null
+        },
+        "predictedSignature": "A high impression gap that correlates with a low ad_fill_ratio, while cdn_5xx, stitch_errors, and ads_latency remain nominal."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2374,
+        "output": 294
+      },
+      "costUsd": 0.0059074999999999996
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-29T16:25:10.920Z",
+      "durationMs": 23891,
+      "output": {
+        "survived": false,
+        "testsAttempted": [
+          "F04",
+          "F08"
+        ],
+        "contradictions": [
+          "The hypothesis states the impression loss is a system-wide issue of ~13.5% that affects all devices uniformly. However, the probe 'other_device_classes_gap' has a value of -0.235, which indicates an impression over-delivery of 23.5% for other device classes, not a loss. This directly contradicts the core claim that a single ad fill rate is causing a uniform gap across all devices."
+        ],
+        "verdict": "The hypothesis is refuted. It posits a uniform, system-wide impression loss, but the probe data shows a significant divergence in impression gap between the target device class and others (loss vs. over-delivery). Therefore, the low ad fill rate cannot be the sole explanatory cause for the observed metrics."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1527,
+        "output": 209
+      },
+      "costUsd": 0.003998750000000001,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"firetv\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"firetv\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-29T16:25:34.811Z",
+      "durationMs": 0,
+      "output": {
+        "decision": "no remediation - hypothesis did not survive falsification",
+        "contradictions": [
+          "The hypothesis states the impression loss is a system-wide issue of ~13.5% that affects all devices uniformly. However, the probe 'other_device_classes_gap' has a value of -0.235, which indicates an impression over-delivery of 23.5% for other device classes, not a loss. This directly contradicts the core claim that a single ad fill rate is causing a uniform gap across all devices."
+        ]
+      }
+    }
+  ],
+  "outcome": "no_action",
+  "costUsd": 0.013553850000000001,
+  "detectedAt": "2026-08-29T16:24:13.132Z",
+  "failureClass": "F04"
+}

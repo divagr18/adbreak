@@ -1,0 +1,190 @@
+{
+  "runId": "bd5133c1",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788020120090",
+    "channel": "sports-1",
+    "region": "us-west",
+    "deviceClass": "firetv",
+    "startedAt": "2026-08-29T16:15:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-29T16:15:20.108Z",
+      "durationMs": 22953,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "decide",
+          "signal",
+          "play",
+          "beacon"
+        ],
+        "affectedDimensions": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": null
+        },
+        "reasoning": "The incident is critical due to a complete failure in revenue realization (RRR=0) and a 100% impression gap, affecting all device classes ('firetv' and 'others'). The extremely low 'ads_fill_ratio' (near zero) strongly indicates that the 'decide' stage is failing to acquire or select ads. While 'ads_latency_p99' is low, suggesting ad requests are processed quickly, they are apparently returning no ads. This upstream failure prevents ads from being passed to 'play' and ultimately results in no 'beacon' events being fired. The 'signal' stage also warrants investigation, as an issue there could be leading to malformed ad break information being sent to 'decide', causing the zero fill."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 774,
+        "output": 237
+      },
+      "costUsd": 0.0008246999999999999,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"firetv\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"firetv\"}[5m])), 1))",
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"firetv\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"firetv\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-29T16:15:43.061Z",
+      "durationMs": 14773,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"firetv\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"firetv\"}[5m])), 1))",
+          "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"firetv\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"firetv\"}[5m])), 1))",
+          "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+          "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+          "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+          "avg(adbreak_ads_fill_ratio)",
+          "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+          "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+        ],
+        "findings": [
+          "A revenue leak of $18.19 is observed.",
+          "Both affected (firetv) and other device classes show a 100% impression gap (impression_gap_affected=1, impression_gap_others=1), indicating no impressions are being fired.",
+          "The ad fill ratio is extremely low, practically zero (ads_fill_ratio=7.06e-7), suggesting almost no ads are being filled.",
+          "There are no CDN 5xx errors (cdn_5xx=0), indicating the CDN is functioning correctly.",
+          "There are no stitching errors (stitch_errors=0), indicating the stitching component is healthy.",
+          "P99 ad decisioning latency is acceptable at 0.199 seconds (ads_latency_p99), ruling out slow ad decisioning responses as the primary issue.",
+          "Data for signal chain divergence is not available (signal_chain_divergence=null)."
+        ],
+        "conclusion": "The data shows a critical failure in ad decisioning or ad sourcing, leading to a near-zero ad fill ratio. This directly results in a 100% impression gap across all devices and a revenue leak. The data rules out issues with CDN, ad stitching, or high ad decisioning latency. The signal chain is explicitly broken at the ad decisioning/fill stage, not further downstream at billing, as ads are not being successfully selected or returned."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 726,
+        "output": 675
+      },
+      "costUsd": 0.0019053000000000002,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-29T16:15:43.061Z",
+      "durationMs": 14773,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [],
+        "findings": [
+          "All device classes across all CDNs are experiencing a total loss of impressions (fraction_of_impressions_lost = 1.0).",
+          "No healthy slices were identified; every combination of device_class and CDN is severely impacted."
+        ],
+        "conclusion": "The fault is widespread, affecting all device classes (android, firetv, ios, roku, smarttv, web) and all CDNs (cdn-east, cdn-west). Therefore, the fault is scoped to both device classes and CDNs, indicating a systemic issue rather than a localized problem."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 727,
+        "output": 151
+      },
+      "costUsd": 0.0005956,
+      "queries": [
+        "1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[5m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[5m])), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-29T16:15:57.834Z",
+      "durationMs": 16718,
+      "output": {
+        "failureClass": "F04",
+        "stage": "decide",
+        "cause": "The ad decisioning system is failing to provide any fill, resulting in empty VAST responses for all ad requests. This leads to a complete loss of impressions across all dimensions.",
+        "confidence": 1,
+        "supportingEvidence": [
+          "The ad fill ratio is effectively zero (ads_fill_ratio=7.06e-7).",
+          "Impression loss is 100% for both the initially reported slice and all other devices (impression_gap_affected=1, impression_gap_others=1).",
+          "Analysis of all device class and CDN combinations shows a 100% impression loss (fraction_of_impressions_lost=1.0).",
+          "Downstream delivery and stitching components are healthy (cdn_5xx=0, stitch_errors=0)."
+        ],
+        "scope": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": null
+        },
+        "predictedSignature": "ads_fill_ratio is near-zero and fraction_of_impressions_lost is 1.0 across all dimensions."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2259,
+        "output": 274
+      },
+      "costUsd": 0.00556375
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-29T16:16:14.552Z",
+      "durationMs": 14415,
+      "output": {
+        "survived": false,
+        "testsAttempted": [
+          "For F04 (empty VAST / no-fill) to be the cause, the ad fill ratio should be near zero, indicating the ad server is failing to provide ads.",
+          "For F08 (regional CDN 5xx on segment delivery) to be the cause, there should be a significant number of CDN 5xx errors.",
+          "For F07 (beacon blackhole at the CDN edge for one device class) to be the cause, the ad fill ratio would be healthy, but impression beacons would fail to be delivered, resulting in a high impression gap."
+        ],
+        "contradictions": [
+          "The probe `ads_fill_ratio` is 0.874, which indicates a healthy 87.4% fill rate. This directly contradicts the defining characteristic of an F04 failure and the initial supporting evidence that claimed a near-zero fill ratio."
+        ],
+        "verdict": "The hypothesis is refuted. The probe for `ads_fill_ratio` shows a value of 0.874, which is healthy and fundamentally incompatible with a diagnosis of F04 (empty VAST / no-fill). The problem is not that ads are unavailable, but that they are not being counted as impressions after being served."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1435,
+        "output": 292
+      },
+      "costUsd": 0.00471375,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"firetv\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"firetv\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-29T16:16:28.967Z",
+      "durationMs": 0,
+      "output": {
+        "decision": "no remediation - hypothesis did not survive falsification",
+        "contradictions": [
+          "The probe `ads_fill_ratio` is 0.874, which indicates a healthy 87.4% fill rate. This directly contradicts the defining characteristic of an F04 failure and the initial supporting evidence that claimed a near-zero fill ratio."
+        ]
+      }
+    }
+  ],
+  "outcome": "no_action",
+  "costUsd": 0.0136031,
+  "detectedAt": "2026-08-29T16:15:20.108Z",
+  "failureClass": "F04"
+}

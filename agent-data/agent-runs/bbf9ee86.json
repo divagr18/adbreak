@@ -1,0 +1,187 @@
+{
+  "runId": "bbf9ee86",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788020189112",
+    "channel": "sports-1",
+    "region": "eu",
+    "deviceClass": "web",
+    "startedAt": "2026-08-29T16:15:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-29T16:16:29.125Z",
+      "durationMs": 20493,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "package",
+          "deliver",
+          "play",
+          "beacon"
+        ],
+        "affectedDimensions": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": null
+        },
+        "reasoning": "The revenue realization rate (RRR) is 0, indicating a complete revenue failure. The impression gap is critically high (over 80%) for all device classes, not just 'web' devices, suggesting a systemic issue. Metrics show no CDN 5xx errors and no stitching errors, making these stages less likely culprits. The ad decision latency is normal, and the ad fill ratio is high (87.4%), indicating the 'decide' stage is successfully finding ads when called. Therefore, the problem is likely occurring after an ad decision is made and points to stages responsible for packaging ad manifests, delivering them to clients, playing them, or correctly firing impression beacons."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 800,
+        "output": 218
+      },
+      "costUsd": 0.000785,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"web\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"web\"}[5m])), 1))",
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"web\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"web\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-29T16:16:49.618Z",
+      "durationMs": 20265,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "impression_gap_affected",
+          "impression_gap_others",
+          "cdn_5xx",
+          "stitch_errors",
+          "ads_latency_p99",
+          "ads_fill_ratio",
+          "signal_chain_divergence",
+          "revenue_leak_usd"
+        ],
+        "findings": [
+          "A significant revenue leak of 23.32 USD is observed.",
+          "There is a critical impression gap of approximately 82-83% across all device classes, indicating that the vast majority of expected ad impressions are not being fired.",
+          "Ad decisioning is performing well, with an 87.4% fill ratio and low P99 latency (199ms).",
+          "There are no CDN 5xx errors.",
+          "There are no ad stitching errors.",
+          "The 'signal_chain_divergence' metric is null, preventing assessment of initial cue signalling or packaging divergence."
+        ],
+        "conclusion": "The data shows a severely unhealthy signal chain, characterized by a massive impression gap causing significant revenue loss. This implies a failure in communicating ad opportunities to the client, or in client-side ad playback/beacon firing for the majority of expected ad breaks. The data rules out issues with CDN delivery, ad stitching, or ad decisioning performance (latency and fill rate when invoked) as the primary cause. As the signal chain itself is clearly problematic, the revenue loss is not due to a downstream billing issue."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 752,
+        "output": 347
+      },
+      "costUsd": 0.0010931,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-29T16:16:49.618Z",
+      "durationMs": 20265,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [],
+        "findings": [
+          "High impression loss (0.6) observed for all device classes (android, firetv, ios, roku, smarttv, web) in combination with CDN 'cdn-east'.",
+          "High impression loss (0.6) observed for all device classes (android, firetv, ios, roku, smarttv, web) in combination with CDN 'cdn-west'."
+        ],
+        "conclusion": "The fault is widespread, affecting all device classes and all CDNs uniformly. It is scoped to 'both' device class and CDN, meaning neither dimension isolates the problem to a specific segment."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 748,
+        "output": 154
+      },
+      "costUsd": 0.0006094,
+      "queries": [
+        "1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[5m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[5m])), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-29T16:17:09.883Z",
+      "durationMs": 23859,
+      "output": {
+        "failureClass": "F09",
+        "stage": "decide",
+        "cause": "The ad decisioning system is failing to return ad pods with sufficient duration to fill the available time in the ad break. While the ad server fill rate is high, indicating it is responding with ads, the cumulative duration of those ads is less than required, causing clients to end the ad break prematurely and not fire all expected impression beacons.",
+        "confidence": 0.9,
+        "supportingEvidence": [
+          "A critical impression gap of ~82% is observed across all device classes, indicating a systemic failure.",
+          "Ad decisioning metrics like fill ratio (87.4%) and p99 latency (199ms) appear healthy, ruling out simple no-fill or latency issues.",
+          "Delivery metrics are perfect, with zero CDN 5xx errors and zero stitch errors, ruling out delivery or packaging failures.",
+          "The issue is uniform across all device classes and CDNs, which points to a fault in a centralized service like ad decisioning.",
+          "The combination of a high fill rate and high impression loss is the classic signature of a duration underfill problem."
+        ],
+        "scope": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": "eu"
+        },
+        "predictedSignature": "High impression_gap_affected across all dimensions, high ads_fill_ratio, low ads_latency_p99, and zero cdn_5xx or stitch_errors."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1984,
+        "output": 338
+      },
+      "costUsd": 0.00586
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-29T16:17:33.742Z",
+      "durationMs": 23378,
+      "output": {
+        "survived": true,
+        "testsAttempted": [
+          "F04",
+          "F03",
+          "F08"
+        ],
+        "contradictions": [],
+        "verdict": "The hypothesis could not be refuted. The supporting evidence for F09 is strong, with the 'classic signature' of a high impression gap combined with a high ad fill ratio. Tests for competing hypotheses failed: F04 (empty VAST) would require a low ads_fill_ratio, but the probe shows 0.874. F03 (ad-server latency) would require high latency, but the evidence states latency is low (199ms). F08 (CDN 5xx) would require a non-zero cdn_5xx rate, but the probe shows 0. No provided data contradicts the hypothesis."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1176,
+        "output": 191
+      },
+      "costUsd": 0.00338,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"web\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"web\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-29T16:17:57.120Z",
+      "durationMs": 0,
+      "output": {
+        "decision": "no runbook mapped to this failure class",
+        "failureClass": "F09"
+      }
+    }
+  ],
+  "outcome": "no_action",
+  "costUsd": 0.011727500000000002,
+  "detectedAt": "2026-08-29T16:16:29.125Z",
+  "failureClass": "F09",
+  "tier": "T2"
+}
