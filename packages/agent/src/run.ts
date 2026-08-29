@@ -21,6 +21,7 @@ import * as M from './tools/metrics.js';
 import { createAnnotation, createIncident, queryPrometheus, scalar } from './tools/grafana.js';
 import { RUNBOOK_FOR, execute, loadRunbooks, substitute } from './tools/runbook.js';
 import { classify, gate, type Tier, type Verdict } from './policy/blast-radius.js';
+import { Supervisor, WatchdogKill } from './watchdog.js';
 
 export interface StepRecord {
   step: string;
@@ -39,7 +40,15 @@ export interface AgentRun {
   trigger: string;
   incident: Incident;
   steps: StepRecord[];
-  outcome: 'remediated' | 'awaiting_approval' | 'blocked' | 'no_action' | 'failed';
+  outcome:
+    | 'remediated'
+    | 'awaiting_approval'
+    | 'blocked'
+    | 'no_action'
+    | 'failed'
+    | 'killed_by_watchdog';
+  /** Set when the watchdog terminated this run. */
+  watchdog?: { reason: string; detail: string };
   failureClass?: string;
   runbookId?: string;
   tier?: Tier;
@@ -58,10 +67,10 @@ const runbooks = loadRunbooks();
 
 const nowIso = () => new Date().toISOString();
 
-const usageFields = (u: StepUsage) => ({
+const usageFields = (u: StepUsage, costMultiplier = 1) => ({
   model: u.model,
   tokens: { input: u.inputTokens, output: u.outputTokens },
-  costUsd: u.costUsd,
+  costUsd: u.costUsd * costMultiplier,
 });
 
 /** Everything the model is allowed to see about the current state of the plant. */
@@ -84,6 +93,8 @@ async function snapshot(deviceClass: string): Promise<Record<string, unknown>> {
 export async function runIncident(
   incident: Incident,
   onStep?: (r: StepRecord) => void,
+  supervisor?: Supervisor,
+  chaos?: { mode: string; step?: string },
 ): Promise<AgentRun> {
   const run: AgentRun = {
     runId: randomUUID().slice(0, 8),
@@ -113,11 +124,37 @@ export async function runIncident(
     run.steps.push(rec);
     run.costUsd += rec.costUsd ?? 0;
     onStep?.(rec);
+    supervisor?.endStep(name, rec.costUsd ?? 0);
   };
+
+  /**
+   * Every step passes through here before doing any work. An aborted run then
+   * stops at the next boundary even when the call already in flight cannot
+   * itself be cancelled.
+   */
+  const begin = (name: string, declaredBudgetMs?: number): number => {
+    supervisor?.assertAlive();
+    supervisor?.beginStep(name, declaredBudgetMs);
+    return Date.now();
+  };
+
+  /** Agent-side fault injection, so the watchdog can be seen doing its job. */
+  const injectChaos = async (stepName: string): Promise<void> => {
+    if (!chaos || chaos.mode === 'off') return;
+    if (chaos.step && !stepName.startsWith(chaos.step)) return;
+    if (chaos.mode === 'stall') {
+      // Long enough to breach any stall budget; the watchdog fires while we wait.
+      await new Promise((r) => setTimeout(r, 200_000));
+    }
+  };
+
+  // Cost chaos inflates what each step reports, so the runaway rule trips.
+  const costMul = chaos?.mode === 'cost' ? 500 : 1;
 
   try {
     // --- 2. Triage --------------------------------------------------------
-    let t0 = Date.now();
+    let t0 = begin('triage');
+    await injectChaos('triage');
     const snap = await snapshot(incident.deviceClass);
     const triage = await runStep({
       name: 'triage',
@@ -134,13 +171,22 @@ export async function runIncident(
       input: { incident, snapshot: snap },
     });
     step('triage', 'llm', t0, triage.output, {
-      ...usageFields(triage.usage),
+      ...usageFields(triage.usage, costMul),
       queries: Object.values(snap._queries as Record<string, string>),
     });
 
     // --- 3. Correlate (parallel branches) ---------------------------------
-    t0 = Date.now();
+    t0 = begin('correlate');
+    await injectChaos('correlate');
+    supervisor?.noteToolCall('query_prometheus', { expr: M.gapByDeviceCdn('5m') });
     const gapRows = await queryPrometheus(M.gapByDeviceCdn('5m'));
+    if (chaos?.mode === 'loop') {
+      // Re-issue the identical query so the loop rule has something to catch.
+      for (let i = 0; i < 3; i++) {
+        supervisor?.noteToolCall('query_prometheus', { expr: M.gapByDeviceCdn('5m') });
+        supervisor?.assertAlive();
+      }
+    }
     // Name the field for what it means and state the direction. Handed a bare
     // "gap: 0.6", a model read it as an impression *gain* and concluded the
     // failing device class was the healthy one.
@@ -181,16 +227,17 @@ export async function runIncident(
     ]);
     const evidence = [signalBranch.output, sliceBranch.output];
     step('correlate:signal_chain', 'llm', t0, signalBranch.output, {
-      ...usageFields(signalBranch.usage),
+      ...usageFields(signalBranch.usage, costMul),
       queries: [M.availSignalChain(), M.cdn5xx(), M.adsLatencyP99()],
     });
     step('correlate:dimensional_slice', 'llm', t0, sliceBranch.output, {
-      ...usageFields(sliceBranch.usage),
+      ...usageFields(sliceBranch.usage, costMul),
       queries: [M.gapByDeviceCdn('5m')],
     });
 
     // --- 4. Hypothesize ---------------------------------------------------
-    t0 = Date.now();
+    t0 = begin('hypothesize');
+    await injectChaos('hypothesize');
     const hypothesis = await runStep({
       name: 'hypothesize',
       model: PRO,
@@ -210,11 +257,12 @@ export async function runIncident(
       ].join(' '),
       input: { incident, snapshot: snap, evidence, gap_by_device_and_cdn: sliceTable },
     });
-    step('hypothesize', 'llm', t0, hypothesis.output, usageFields(hypothesis.usage));
+    step('hypothesize', 'llm', t0, hypothesis.output, usageFields(hypothesis.usage, costMul));
     run.failureClass = hypothesis.output.failureClass;
 
     // --- 5. Falsify -------------------------------------------------------
-    t0 = Date.now();
+    t0 = begin('falsify');
+    await injectChaos('falsify');
     const probes = {
       other_device_classes_gap: await scalar(M.impressionGapOthers(incident.deviceClass, '5m')),
       cdn_5xx: await scalar(M.cdn5xx()),
@@ -242,7 +290,7 @@ export async function runIncident(
       input: { hypothesis: hypothesis.output, probes, evidence },
     });
     step('falsify', 'llm', t0, falsification.output, {
-      ...usageFields(falsification.usage),
+      ...usageFields(falsification.usage, costMul),
       queries: [M.impressionGapOthers(incident.deviceClass, '5m'), M.cdn5xx(), M.stitchErrors()],
     });
 
@@ -260,7 +308,7 @@ export async function runIncident(
     }
 
     // --- 6. Plan (lookup table - never the model) -------------------------
-    t0 = Date.now();
+    t0 = begin('plan');
     const runbookId = RUNBOOK_FOR[hypothesis.output.failureClass];
     const runbook = runbookId ? runbooks.get(runbookId) : undefined;
     const scope = hypothesis.output.scope;
@@ -330,13 +378,15 @@ export async function runIncident(
     }
 
     // --- 7. Act -----------------------------------------------------------
-    t0 = Date.now();
+    t0 = begin('act');
     const executed = await execute(runbook.actions, vars);
     run.remediatedAt = nowIso();
     step('act', 'code', t0, { executed: true, steps: executed });
 
     // --- 8. Verify (the outcome, not the action) --------------------------
-    t0 = Date.now();
+    // Verification declares its own bound: it polls live telemetry for as long
+    // as the runbook allows, plus a margin for the final query.
+    t0 = begin('verify', runbook.verification.timeout_s * 1000 + 30_000);
     const deadline = Date.now() + runbook.verification.timeout_s * 1000;
     let gapNow: number | null = null;
     let recovered = false;
@@ -369,7 +419,7 @@ export async function runIncident(
     run.outcome = recovered ? 'remediated' : 'failed';
 
     // --- 9. Document ------------------------------------------------------
-    t0 = Date.now();
+    t0 = begin('document');
     const leak = await scalar(M.revenueLeakUsd('15m'));
     const doc = await runStep({
       name: 'document',
@@ -394,7 +444,7 @@ export async function runIncident(
         revenueLeakUsd: leak,
       },
     });
-    step('document', 'llm', t0, doc.output, usageFields(doc.usage));
+    step('document', 'llm', t0, doc.output, usageFields(doc.usage, costMul));
     run.postmortem = doc.output.postmortem;
     run.cfoBrief = doc.output.cfoBrief;
 
@@ -407,6 +457,18 @@ export async function runIncident(
 
     return run;
   } catch (err) {
+    if (err instanceof WatchdogKill) {
+      // The partial trace is kept deliberately: a human inheriting this run
+      // should get the work done so far, not a blank page.
+      run.outcome = 'killed_by_watchdog';
+      run.watchdog = { reason: err.reason, detail: err.detail };
+      run.error = err.message;
+      await createAnnotation(
+        `AdBreak ${run.runId}: watchdog terminated the run (${err.reason}) - ${err.detail}`,
+        ['adbreak', 'agent', 'watchdog'],
+      ).catch(() => {});
+      return run;
+    }
     run.outcome = 'failed';
     run.error = String(err);
     return run;

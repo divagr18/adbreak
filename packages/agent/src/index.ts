@@ -11,6 +11,8 @@ import { runIncident, type AgentRun } from './run.js';
 import { scalar } from './tools/grafana.js';
 import { impressionGap } from './tools/metrics.js';
 import { renderRunList, renderRun } from './trace-ui.js';
+import { Supervisor, historyFrom } from './watchdog.js';
+import { Router } from 'express';
 
 const svc = createService('agent');
 const GRAFANA_URL = (process.env.GRAFANA_URL ?? '').replace(/\/$/, '');
@@ -56,12 +58,22 @@ const mttd = svc.histogram({
   labels: [] as const,
   buckets: [5, 15, 30, 60, 120, 300],
 });
+const watchdogInterventions = svc.counter({
+  name: 'adbreak_agent_watchdog_intervention_total',
+  help: 'Runs terminated by the watchdog, by reason',
+  labels: ['reason'] as const,
+});
 const mttr = svc.histogram({
   name: 'adbreak_agent_mttr_seconds',
   help: 'Detection to verified recovery',
   labels: [] as const,
   buckets: [30, 60, 90, 120, 180, 300, 600],
 });
+
+// ---- agent-side chaos -----------------------------------------------------
+// The plant has a chaos injector; so does the agent. Breaking the agent on
+// purpose is the only honest way to show its own supervisor catching it.
+const agentChaos: { mode: 'off' | 'stall' | 'loop' | 'cost'; step?: string } = { mode: 'off' };
 
 // ---- run store ------------------------------------------------------------
 
@@ -163,14 +175,24 @@ async function handle(instance: AlertInstance): Promise<void> {
   });
 
   try {
-    const run = await runIncident(incident, (rec) => {
-      stepDuration.observe({ step: rec.step, kind: rec.kind }, rec.durationMs / 1000);
-      if (rec.model && rec.tokens) {
-        tokensTotal.inc({ model: rec.model, step: rec.step, kind: 'input' }, rec.tokens.input);
-        tokensTotal.inc({ model: rec.model, step: rec.step, kind: 'output' }, rec.tokens.output);
-        costTotal.inc({ model: rec.model }, rec.costUsd ?? 0);
-      }
+    const supervisor = new Supervisor(historyFrom(listRuns()), undefined, (reason, detail) => {
+      watchdogInterventions.inc({ reason });
+      svc.log.error('watchdog terminated the run', { reason, detail });
     });
+
+    const run = await runIncident(
+      incident,
+      (rec) => {
+        stepDuration.observe({ step: rec.step, kind: rec.kind }, rec.durationMs / 1000);
+        if (rec.model && rec.tokens) {
+          tokensTotal.inc({ model: rec.model, step: rec.step, kind: 'input' }, rec.tokens.input);
+          tokensTotal.inc({ model: rec.model, step: rec.step, kind: 'output' }, rec.tokens.output);
+          costTotal.inc({ model: rec.model }, rec.costUsd ?? 0);
+        }
+      },
+      supervisor,
+      agentChaos,
+    );
 
     saveRun(run);
     runTotal.inc({ trigger: run.trigger, outcome: run.outcome });
@@ -233,6 +255,21 @@ svc.app.post('/alert', (req, res) => {
   for (const a of alerts) void handle({ labels: a.labels ?? {}, state: 'Alerting' });
   res.json({ accepted: alerts.length });
 });
+
+const admin = Router();
+admin.get('/agent-chaos', (_req, res) => res.json(agentChaos));
+admin.post('/agent-chaos', (req, res) => {
+  const mode = req.body?.mode;
+  if (!['off', 'stall', 'loop', 'cost'].includes(mode)) {
+    res.status(400).json({ error: 'mode must be off|stall|loop|cost' });
+    return;
+  }
+  agentChaos.mode = mode;
+  agentChaos.step = req.body?.step;
+  svc.log.warn('agent chaos armed', { ...agentChaos });
+  res.json(agentChaos);
+});
+svc.admin(admin);
 
 svc.app.get('/runs', (_req, res) => res.json(listRuns()));
 svc.app.get('/runs/:id', (req, res) => {
