@@ -1,0 +1,197 @@
+{
+  "runId": "ea25ce03",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788024731470",
+    "channel": "sports-1",
+    "region": "eu",
+    "deviceClass": "roku",
+    "startedAt": "2026-08-29T16:32:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:32:11.584Z",
+      "durationMs": 30907,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "decide",
+          "package",
+          "signal"
+        ],
+        "affectedDimensions": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": null
+        },
+        "reasoning": "The revenue realization rate (RRR) is 0, indicating a complete failure to monetize. The primary cause appears to be that 'ads_pod_seconds_filled' is near zero, meaning ad pods are almost entirely unfilled. This points directly to the 'decide' stage's inability to source or select ads. While 'ads_nofill_rate' is 0, suggesting ad requests are not explicitly failing as 'no-fills', it implies that ad responses either contain no ads or insufficient ad content, which is a critical issue for 'decide'. The 'impression_gap' is 20% for 'roku' devices and also 20% for 'non-roku' devices, indicating the problem is systemic across all device classes, not specific to 'roku'. There are no CDN 5xx errors or stitching errors, ruling out 'deliver' or 'stitch' as primary causes. 'package' and 'signal' are upstream stages that could be failing to provide adequate ad opportunities or context to 'decide', hence they are also suspected. Given the global impact on device classes and the core ad fulfillment failure, the issue is likely global, thus 'deviceClass' and 'region' are null."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 892,
+        "output": 327
+      },
+      "costUsd": 0.0010850999999999999,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"}[5m])), 1))",
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "(sum(increase(adbreak_ads_nofill_total[5m])) or vector(0)) / clamp_min(sum(increase(adbreak_ads_request_total[5m])), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:32:42.491Z",
+      "durationMs": 13905,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "impression_gap_affected",
+          "impression_gap_others",
+          "cdn_5xx",
+          "stitch_errors",
+          "ads_latency_p99",
+          "ads_pod_seconds_filled",
+          "ads_nofill_rate",
+          "signal_chain_divergence",
+          "revenue_leak_usd"
+        ],
+        "findings": [
+          "A significant revenue leak of 15.39 USD is observed.",
+          "There is a substantial impression gap of approximately 20% across all device classes, including the affected Roku devices, indicating a systemic issue.",
+          "Ad decisioning successfully filled ad requests, as indicated by an ads_nofill_rate of 0.",
+          "Despite ads being filled, the ads_pod_seconds_filled metric is extremely low (0.00078), suggesting that selected ads are not playing or are playing for negligible durations.",
+          "CDN 5xx errors are 0, ruling out server-side CDN issues.",
+          "Stitching errors are 0, ruling out problems in the ad stitching component.",
+          "Ad decisioning latency (p99) is acceptable at 335ms.",
+          "The signal_chain_divergence metric is null, providing no information."
+        ],
+        "conclusion": "The data shows a critical problem within the ad-insertion signal chain, specifically after ad decisioning but before or during ad playback and impression beaconing. While ad decisioning successfully selects ads, these ads are either malformed, invalid, or not effectively playing, leading to a near-zero duration of filled ad content and a 20% impression gap. This rules out issues with ad decisioning's ability to find ads, CDN errors, or stitching errors. The signal chain is not healthy, indicating the issue resides within ad content delivery, player playback, or impression tracking, not in billing."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 844,
+        "output": 438
+      },
+      "costUsd": 0.0013482,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:32:42.491Z",
+      "durationMs": 13905,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [
+          "Examined 'fraction_of_impressions_lost' across all combinations of 'device_class' and 'cdn'."
+        ],
+        "findings": [
+          "All reported dimensional slices are experiencing impression loss.",
+          "Specifically, the following slices show a significant loss of 0.3333: 'android' on 'cdn-east', 'firetv' on 'cdn-east', 'ios' on 'cdn-east', 'roku' on 'cdn-east', 'smarttv' on 'cdn-east', 'web' on 'cdn-east', 'android' on 'cdn-west', 'firetv' on 'cdn-west', 'ios' on 'cdn-west', 'roku' on 'cdn-west', 'smarttv' on 'cdn-west', and 'web' on 'cdn-west'.",
+          "There are no healthy slices (i.e., with 'fraction_of_impressions_lost' near 0.0) in the provided data."
+        ],
+        "conclusion": "The fault is not scoped to a single device class or CDN, as all device classes across both 'cdn-east' and 'cdn-west' are uniformly affected. The incident impacts both dimensions broadly."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 784,
+        "output": 289
+      },
+      "costUsd": 0.0009576999999999999,
+      "queries": [
+        "1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[5m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[5m])), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:32:56.396Z",
+      "durationMs": 21701,
+      "output": {
+        "failureClass": "F09",
+        "stage": "decide",
+        "cause": "The ad decisioning system is failing to fill the duration of the ad pod. While VAST responses are being returned (no-fill rate is zero), the selected ads are too short, leaving most of the available time empty and causing a loss of impression opportunities.",
+        "confidence": 0.95,
+        "supportingEvidence": [
+          "The 'ads_pod_seconds_filled' metric is extremely low (0.00078) despite a zero 'ads_nofill_rate', indicating ad pods are being filled with ads of negligible duration.",
+          "Impression loss of ~20-33% is observed across all device classes and CDNs, indicating a systemic, non-localized issue.",
+          "Upstream and downstream components appear healthy, with zero CDN 5xx errors, zero stitch errors, and normal ad-server latency."
+        ],
+        "scope": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": null
+        },
+        "predictedSignature": "A severe drop in `ads_pod_seconds_filled` to near zero, concurrent with a high `fraction_of_impressions_lost` across all dimensions, while `ads_nofill_rate` remains at or near zero."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2468,
+        "output": 302
+      },
+      "costUsd": 0.006105
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:33:18.097Z",
+      "durationMs": 22422,
+      "output": {
+        "survived": true,
+        "testsAttempted": [
+          "F04",
+          "F03",
+          "F08",
+          "F07"
+        ],
+        "contradictions": [
+          "The F04 (empty VAST / no-fill) hypothesis requires a high 'ads_nofill_rate' signal. The probe value is 0, which contradicts this hypothesis.",
+          "The F03 (ad-server latency spike) hypothesis requires a high ad-server latency signal. The evidence states 'ads_latency_p99 is acceptable at 335ms', which contradicts this hypothesis.",
+          "The F08 (regional CDN 5xx on segment delivery) hypothesis requires a high 'cdn_5xx' error rate. The probe value is 0, which contradicts this hypothesis.",
+          "The F07 (beacon blackhole at the CDN edge for one device class) hypothesis requires the fault to be isolated to a single device class. The evidence confirms the issue impacts all device classes and CDNs, which contradicts this hypothesis."
+        ],
+        "verdict": "The candidate hypothesis F09 (ad pod duration underfill) could not be refuted. All relevant competing hypotheses were contradicted by the available probe data. The observed signals, specifically a near-zero 'ads_nofill_rate' combined with a near-zero 'ads_pod_seconds_filled' and high impression loss across all dimensions, are a strong match for the predicted signature of F09."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1384,
+        "output": 334
+      },
+      "costUsd": 0.00507,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-29T17:33:40.519Z",
+      "durationMs": 0,
+      "output": {
+        "decision": "no runbook mapped to this failure class",
+        "failureClass": "F09"
+      }
+    }
+  ],
+  "outcome": "no_action",
+  "costUsd": 0.014566,
+  "detectedAt": "2026-08-29T17:32:11.584Z",
+  "failureClass": "F09",
+  "tier": "T3"
+}

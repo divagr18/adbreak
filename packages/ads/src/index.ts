@@ -8,6 +8,7 @@ import { Router } from 'express';
 import {
   BEACON_EVENTS,
   METRICS,
+  REGIONS,
   contextFromTraceparent,
   createService,
   exemplarLabels,
@@ -44,6 +45,13 @@ const adsDuration = svc.histogram(METRICS.adsResponseDuration);
 const adsPodDuration = svc.gauge(METRICS.adsPodDuration);
 const adsFillRatio = svc.gauge(METRICS.adsFillRatio);
 const adsNoFill = svc.counter(METRICS.adsNoFill);
+// Publish the series at zero for every region before anything goes wrong.
+// A counter that only springs into existence when the fault starts is absent
+// for exactly as long as it takes anyone to notice - and an absent series
+// reads as "no no-fills" rather than "no data". That cost the agent an F04
+// diagnosis: 150s into a total no-fill it still saw a rate of zero, correctly
+// concluded that pods were being returned but empty, and called F09.
+for (const region of REGIONS) adsNoFill.inc({ ads: ADS_ID, region }, 0);
 
 /** Rolling fill accounting per region, so the gauge reflects recent behaviour. */
 const fill = new Map<string, { requested: number; filled: number }>();

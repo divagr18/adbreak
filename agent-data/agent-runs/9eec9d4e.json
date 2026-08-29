@@ -1,0 +1,261 @@
+{
+  "runId": "9eec9d4e",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788024528611",
+    "channel": "sports-1",
+    "region": "us-east",
+    "deviceClass": "roku",
+    "startedAt": "2026-08-29T17:28:48.611Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:28:48.686Z",
+      "durationMs": 23717,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "condition",
+          "deliver",
+          "play",
+          "beacon"
+        ],
+        "affectedDimensions": {
+          "deviceClass": "roku",
+          "cdn": null,
+          "region": "us-east"
+        },
+        "reasoning": "The Revenue Realization Rate (RRR) is 0 and there's a 60% impression gap specifically for Roku devices, indicating a critical revenue impact. While ad fill rates and decisioning latency appear healthy, and there are no CDN 5xx errors or stitching errors, the problem is localized to Roku devices. This suggests issues in device-specific ad conditioning, content delivery to Roku, client-side ad playback on Roku, or the reporting of beacons from Roku clients."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 881,
+        "output": 183
+      },
+      "costUsd": 0.0007218,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"}[5m])), 1))",
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "(sum(increase(adbreak_ads_nofill_total[5m])) or vector(0)) / clamp_min(sum(increase(adbreak_ads_request_total[5m])), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:29:12.403Z",
+      "durationMs": 14326,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "impression_gap_affected",
+          "impression_gap_others",
+          "cdn_5xx",
+          "stitch_errors",
+          "ads_latency_p99",
+          "ads_pod_seconds_filled",
+          "ads_nofill_rate",
+          "signal_chain_divergence",
+          "revenue_leak_usd"
+        ],
+        "findings": [
+          "There is a significant revenue leak of 9.42 USD.",
+          "A high impression gap of 60.78% is observed specifically for 'roku' devices.",
+          "Other devices ('impression_gap_others') show a healthy, slightly negative impression gap, indicating the issue is device-specific.",
+          "Ad decisioning latency (p99: 0.199s) is low, indicating responsiveness.",
+          "Ad pod fill rate is high (87.5%), suggesting ads are being successfully decided.",
+          "There are no ad no-fills (0%), confirming ad decisioning is providing ads when requested.",
+          "No CDN 5xx errors are reported, ruling out server-side CDN delivery issues.",
+          "No ad stitching errors are reported, ruling out stitching as a cause.",
+          "Signal chain divergence data is not available (null)."
+        ],
+        "conclusion": "The data shows a significant revenue loss and a high impression gap exclusively for Roku devices. Ad decisioning is healthy with low latency and high fill rates, and there are no CDN or stitching errors. This rules out upstream ad decisioning, packaging, and stitching issues. The problem is specific to the 'roku' device class, manifesting as a failure to fire impressions despite ads being available and prepared. This indicates a disruption at the very end of the signal chain, affecting ad delivery or client-side impression reporting for Roku, which directly impacts revenue realization and downstream billing. The signal chain components up to stitching appear healthy, therefore the revenue loss points downstream from ad preparation to client-side delivery/billing."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 833,
+        "output": 454
+      },
+      "costUsd": 0.0013848999999999999,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:29:12.403Z",
+      "durationMs": 14327,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [],
+        "findings": [
+          "The device class 'roku' is experiencing significant impression loss across all CDNs, with 48.91% loss on 'cdn-east' and 50.0% loss on 'cdn-west'.",
+          "All other device classes (android, firetv, ios, smarttv, web) show healthy or negative impression loss values across both CDNs, indicating no impression loss for these segments."
+        ],
+        "conclusion": "The fault is scoped to the device class 'roku'."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 783,
+        "output": 135
+      },
+      "costUsd": 0.0005724,
+      "queries": [
+        "1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[5m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[5m])), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:29:26.730Z",
+      "durationMs": 15687,
+      "output": {
+        "failureClass": "F07",
+        "stage": "beacon",
+        "cause": "Upstream systems (decision, stitch, delivery) are healthy, but there is a significant impression loss isolated to the 'roku' device class. This indicates that impression beacons from Roku devices are failing to reach the collector.",
+        "confidence": 1,
+        "supportingEvidence": [
+          "A high impression gap of 60.8% is observed, specifically for the 'roku' device class.",
+          "All other device classes show a healthy (negative) impression gap.",
+          "The no-fill rate is 0, indicating ad decisions are being returned successfully.",
+          "Ad pod fill ratio is normal (0.875), ruling out duration underfill.",
+          "CDN 5xx error rate is zero, ruling out manifest or segment delivery failures.",
+          "Ad decisioning latency is low (0.199s), ruling out ad server performance issues."
+        ],
+        "scope": {
+          "deviceClass": "roku",
+          "cdn": null,
+          "region": null
+        },
+        "predictedSignature": "High impression loss for a single device class with no other correlated pipeline failures."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2312,
+        "output": 273
+      },
+      "costUsd": 0.00562
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:29:42.417Z",
+      "durationMs": 25344,
+      "output": {
+        "survived": true,
+        "testsAttempted": [
+          "F04",
+          "F09",
+          "F08",
+          "F02"
+        ],
+        "contradictions": [],
+        "verdict": "The hypothesis could not be refuted. The available probes systematically eliminate alternative failure classes. The 'ads_nofill_rate' is 0, which rules out F04 (empty VAST / no-fill). The 'ads_pod_seconds_filled' is 0.875, a normal value that rules out F09 (ad pod duration underfill). The 'cdn_5xx' rate is 0, ruling out F08 (regional CDN 5xx). Finally, 'stitch_errors' are 0, which rules out F02 (cue dropped by packager). Since all upstream signals appear healthy and the issue is scoped only to the 'roku' device class, the evidence points strongly toward a client-side beaconing issue as described in F07."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1195,
+        "output": 229
+      },
+      "costUsd": 0.00378375,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-29T17:30:07.761Z",
+      "durationMs": 416,
+      "output": {
+        "runbookId": "rb-beacon-fallback",
+        "version": 1,
+        "title": "Fail over to server-side beacon emission for an affected device class",
+        "params": {
+          "device": "roku",
+          "region": "us-east"
+        },
+        "blastRadiusTier": "T1",
+        "verdict": {
+          "verdict": "BLOCK",
+          "reason": "runbook preconditions not met"
+        },
+        "preconditions": [
+          {
+            "id": "gap_is_real",
+            "expr": "impression_gap{device_class=\"roku\"} > 0.4",
+            "promql": "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"}[3m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"}[3m])), 1))",
+            "value": 0.05882352941176472,
+            "met": false
+          },
+          {
+            "id": "scoped_not_global",
+            "expr": "impression_gap{device_class!=\"roku\"} < 0.1",
+            "promql": "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}[3m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}[3m])), 1))",
+            "value": 0.285140562248996,
+            "met": false
+          }
+        ],
+        "predictedImpact": {
+          "rrr_delta": 0.9,
+          "description": "Beacons for $device stop traversing the CDN edge and are emitted directly by the SSAI, so impressions resume for that class within one ad break.\n",
+          "risk": "Duplicate impressions if client beacons resume mid-window. Mitigated: the collector deduplicates on session|avail|pos|creative|event, so a duplicate is discarded rather than billed twice.\n"
+        },
+        "actions": [
+          {
+            "type": "config_patch",
+            "target": "ssai",
+            "method": "POST",
+            "path": "/admin/beacon-mode",
+            "body": {
+              "device_class": "roku",
+              "mode": "server_side"
+            }
+          }
+        ],
+        "rollback": [
+          {
+            "type": "config_patch",
+            "target": "ssai",
+            "method": "POST",
+            "path": "/admin/beacon-mode",
+            "body": {
+              "device_class": "roku",
+              "mode": "client_side"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "step": "act",
+      "kind": "code",
+      "startedAt": "2026-08-29T17:30:08.230Z",
+      "durationMs": 0,
+      "output": {
+        "executed": false,
+        "reason": "runbook preconditions not met"
+      }
+    }
+  ],
+  "outcome": "blocked",
+  "costUsd": 0.01208285,
+  "detectedAt": "2026-08-29T17:28:48.686Z",
+  "failureClass": "F07",
+  "runbookId": "rb-beacon-fallback",
+  "tier": "T1",
+  "verdict": "BLOCK"
+}

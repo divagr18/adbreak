@@ -1,0 +1,193 @@
+{
+  "runId": "aa500f3e",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788024911450",
+    "channel": "sports-1",
+    "region": "eu",
+    "deviceClass": "android",
+    "startedAt": "2026-08-29T17:34:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:35:11.529Z",
+      "durationMs": 35432,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "decide",
+          "deliver",
+          "beacon"
+        ],
+        "affectedDimensions": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": "eu"
+        },
+        "reasoning": "The incident shows a complete revenue realization failure (rrr: 0) and a high impression gap (~77%) for both affected (android) and other device classes, indicating a critical, widespread issue. The primary suspected stages are 'decide' due to an extremely low 'ads_pod_seconds_filled' and high 'ads_nofill_rate' (over 50%), suggesting ad selection is failing to provide content. Concurrently, significant 'cdn_5xx' errors point to a major problem in the 'deliver' stage, preventing content or ad creatives from reaching players. The high 'impression_gap_affected' and 'impression_gap_others' ultimately manifest as a failure in the 'beacon' stage, which requires investigation as the final observed impact, although the root causes are likely upstream."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 922,
+        "output": 245
+      },
+      "costUsd": 0.0008891,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"android\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"android\"}[5m])), 1))",
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"android\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"android\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "(sum(increase(adbreak_ads_nofill_total[5m])) or vector(0)) / clamp_min(sum(increase(adbreak_ads_request_total[5m])), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:35:46.962Z",
+      "durationMs": 16354,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"android\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"android\"}[5m])), 1))",
+          "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"android\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"android\"}[5m])), 1))",
+          "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+          "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+          "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+          "avg(adbreak_ads_fill_ratio)",
+          "(sum(increase(adbreak_ads_nofill_total[5m])) or vector(0)) / clamp_min(sum(increase(adbreak_ads_request_total[5m])), 1)",
+          "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+          "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+        ],
+        "findings": [
+          "A severe impression gap of 77.27% on affected devices (Android) and 76.80% on other devices indicates a widespread failure in ad delivery or measurement.",
+          "A very high volume of CDN 5xx errors (1214.77) is observed, pointing to a critical issue in ad delivery, preventing ads from reaching users.",
+          "A high ad no-fill rate of 52.57% suggests significant problems in ad decisioning or inventory availability, contributing to the revenue loss by failing to fill ad opportunities.",
+          "Ad stitching errors are zero, indicating that the ad stitching component is functioning correctly.",
+          "Ad decisioning latency (P99) is low at 0.34 seconds, ruling out slow ad decisioning as a primary cause for delivery issues, though the outcome (no-fill) remains problematic.",
+          "The extremely low 'ads_pod_seconds_filled' (approx. 7e-7) reinforces the severity of ad fill issues, either due to lack of inventory or failed delivery."
+        ],
+        "conclusion": "The data clearly indicates significant issues within the ad-insertion signal chain, specifically at the ad delivery (CDN 5xx errors) and ad decisioning/inventory (high no-fill rate) stages. These two factors are the primary causes for the observed high impression gap and revenue leak. The problem is not isolated to a single device class. Ad stitching and ad decisioning service response times are ruled out as root causes. Given these clear signal chain failures, the revenue loss is directly attributable to these operational issues, ruling out billing as the *sole* cause of the revenue incident."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 874,
+        "output": 767
+      },
+      "costUsd": 0.0021796999999999997,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:35:46.962Z",
+      "durationMs": 16355,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [],
+        "findings": [
+          "Total impression loss (1.0 fraction_of_impressions_lost) is observed for all combinations of device class and CDN.",
+          "Specifically, the following slices show 100% impression loss: android on cdn-east, firetv on cdn-east, ios on cdn-east, roku on cdn-east, smarttv on cdn-east, web on cdn-east, android on cdn-west, firetv on cdn-west, ios on cdn-west, roku on cdn-west, smarttv on cdn-west, web on cdn-west.",
+          "No healthy slices were identified, as all reported fraction_of_impressions_lost values are 1.0."
+        ],
+        "conclusion": "The fault is widespread, affecting all listed device classes (android, firetv, ios, roku, smarttv, web) and all listed CDNs (cdn-east, cdn-west). The issue is not scoped to a single device class or a single CDN, but rather impacts both universally."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 724,
+        "output": 258
+      },
+      "costUsd": 0.0008621999999999999,
+      "queries": [
+        "1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[5m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[5m])), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:36:03.317Z",
+      "durationMs": 30792,
+      "output": {
+        "failureClass": "F08",
+        "stage": "deliver",
+        "cause": "A massive spike in CDN 5xx errors is causing a total failure of ad segment delivery. While a concurrent high no-fill rate exists, the CDN failure is the ultimate blocker, preventing any impressions from being served and leading to 100% impression loss across all slices.",
+        "confidence": 0.95,
+        "supportingEvidence": [
+          "An extremely high rate of CDN 5xx errors (1214.77) is observed.",
+          "Detailed metrics show a 100% impression loss (fraction_of_impressions_lost: 1.0) across all measured device classes and CDNs.",
+          "The failure is widespread, impacting both Android (77.3% loss) and other device classes (76.8% loss) at a macro level.",
+          "A high no-fill rate of 52.6% indicates a secondary failure in ad decisioning, but the CDN outage is the more critical failure as it affects all ad delivery attempts."
+        ],
+        "scope": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": "eu"
+        },
+        "predictedSignature": "High `cdn_5xx` rate across all CDNs, with `fraction_of_impressions_lost` approaching 1.0 for all device classes in a region."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2736,
+        "output": 323
+      },
+      "costUsd": 0.00665
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:36:34.109Z",
+      "durationMs": 26565,
+      "output": {
+        "survived": false,
+        "testsAttempted": [
+          "F04 (empty VAST / no-fill) requires a high `ads_nofill_rate`; the probe value of 0.330 is substantially high, indicating this is a major parallel failure.",
+          "F09 (ad pod duration underfill) requires a low `ads_pod_seconds_filled`; the probe value of 0.874 is high, definitively ruling out underfill as a cause.",
+          "F08 (regional CDN 5xx on segment delivery), as the hypothesized 'ultimate blocker', implies that other stages like ad decisioning are passing traffic that then fails at the CDN. We test this by examining metrics from preceding stages."
+        ],
+        "contradictions": [
+          "The hypothesis's supporting evidence claimed an 'extremely low ads_pod_seconds_filled' value was reinforcing the severity of the issue. The new probe `ads_pod_seconds_filled` is 0.874, which is a very high and healthy value.",
+          "This high `ads_pod_seconds_filled` value proves that for the ~67% of ad opportunities that are not no-fills, the pods are being filled almost to completion. This directly contradicts the hypothesis's claim that F08 is an 'ultimate blocker' causing a 'total failure of ad segment delivery'."
+        ],
+        "verdict": "The hypothesis is refuted. The claim that F08 is the 'ultimate blocker' is incorrect. The probe `ads_pod_seconds_filled` shows that when ad decisions are successful (i.e., not a no-fill), pods are being filled substantially. The system is experiencing a compound failure where F04 (no-fill) is responsible for ~33% of the loss, and F08 (CDN errors) impacts the remainder. The F08 failure is not blocking all delivery as claimed."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1734,
+        "output": 422
+      },
+      "costUsd": 0.0063875,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"android\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"android\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-29T17:37:00.675Z",
+      "durationMs": 0,
+      "output": {
+        "decision": "no remediation - hypothesis did not survive falsification",
+        "contradictions": [
+          "The hypothesis's supporting evidence claimed an 'extremely low ads_pod_seconds_filled' value was reinforcing the severity of the issue. The new probe `ads_pod_seconds_filled` is 0.874, which is a very high and healthy value.",
+          "This high `ads_pod_seconds_filled` value proves that for the ~67% of ad opportunities that are not no-fills, the pods are being filled almost to completion. This directly contradicts the hypothesis's claim that F08 is an 'ultimate blocker' causing a 'total failure of ad segment delivery'."
+        ]
+      }
+    }
+  ],
+  "outcome": "no_action",
+  "costUsd": 0.0169685,
+  "detectedAt": "2026-08-29T17:35:11.529Z",
+  "failureClass": "F08"
+}
