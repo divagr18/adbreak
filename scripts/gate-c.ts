@@ -93,7 +93,11 @@ async function waitForRun(afterMs: number, timeoutMs: number): Promise<AgentRun 
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const runs = await json<AgentRun[]>(`${AGENT}/runs`).catch(() => []);
-    const fresh = runs.find((r) => Date.parse(r.detectedAt) >= afterMs);
+    // Earliest after afterMs, not newest — see gate-d.ts for why the
+    // difference matters once a remediation starts closing the gap.
+    const fresh = runs
+      .filter((r) => Date.parse(r.detectedAt) >= afterMs)
+      .sort((a, b) => Date.parse(a.detectedAt) - Date.parse(b.detectedAt))[0];
     if (fresh && (fresh.verifiedAt || fresh.outcome !== 'remediated')) return fresh;
     await sleep(10_000);
   }

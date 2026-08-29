@@ -101,14 +101,17 @@ async function reset(): Promise<void> {
  * where a 1/N impression deficit from an earlier F08 looked convincingly like
  * a broken metric.
  *
- * Ten minutes is five whole break cadences, which reads the gap exactly.
+ * Four minutes is two whole break cadences. Measured on a healthy plant it
+ * ranged 0.009 across seven samples - as trustworthy as the 10m window against
+ * a 0.03 threshold, and it clears a fault's residue in four minutes rather than
+ * ten, which matters when six scenarios each wait for it.
  */
 async function settle(maxMs = 12 * 60_000): Promise<void> {
   const gap =
     '1 - ((sum(adbreak_beacon_fired_total{event="impression"}) - ' +
-    'sum(adbreak_beacon_fired_total{event="impression"} offset 10m)) / ' +
+    'sum(adbreak_beacon_fired_total{event="impression"} offset 4m)) / ' +
     'clamp_min(sum(adbreak_beacon_expected_total{event="impression"}) - ' +
-    'sum(adbreak_beacon_expected_total{event="impression"} offset 10m), 1))';
+    'sum(adbreak_beacon_expected_total{event="impression"} offset 4m), 1))';
   const deadline = Date.now() + maxMs;
   process.stdout.write('  settling');
   while (Date.now() < deadline) {
@@ -123,7 +126,16 @@ async function settle(maxMs = 12 * 60_000): Promise<void> {
   console.log(' gave up waiting — the plant is still not quiet');
 }
 
-/** Fire an alert and wait for the run it produces to reach a terminal state. */
+/**
+ * The run this trigger produced — the EARLIEST after t0, not the newest.
+ *
+ * /runs comes back newest-first, so a plain .find() returns the most recent
+ * matching run. When a remediation succeeds the agent's poller often opens a
+ * second run moments later, which correctly BLOCKS because the gap has already
+ * closed - and the gate then grades that follow-up instead of the run it
+ * actually triggered. A healthy F07 remediation was scored as "blocked" this
+ * way, and the verdict looked like a precondition bug rather than a harness one.
+ */
 async function triggerAndWait(device: string, maxMs = 8 * 60_000): Promise<AgentRun | null> {
   const t0 = Date.now();
   await post(`${AGENT}/alert`, {
@@ -133,10 +145,12 @@ async function triggerAndWait(device: string, maxMs = 8 * 60_000): Promise<Agent
   while (Date.now() < deadline) {
     await sleep(10_000);
     const runs = await json<AgentRun[]>(`${AGENT}/runs`).catch(() => []);
-    const fresh = runs.find((r) => Date.parse(r.detectedAt) >= t0);
     // A run is only written to the store once it has finished, so its presence
     // is itself the terminal signal.
-    if (fresh) return fresh;
+    const mine = runs
+      .filter((r) => Date.parse(r.detectedAt) >= t0)
+      .sort((a, b) => Date.parse(a.detectedAt) - Date.parse(b.detectedAt));
+    if (mine.length > 0) return mine[0];
   }
   return null;
 }
@@ -187,10 +201,19 @@ async function healthyRunSurvives(): Promise<void> {
   await sleep(150_000);
 
   const run = await triggerAndWait('roku');
+  // Not merely "was not killed". A run that stops at the plan stage never
+  // reaches verify or document - the long steps a false stall kill would
+  // actually hit - so it would pass this check without testing it. Require the
+  // full pipeline to have run.
+  const reached = (name: string) => run?.steps.some((s) => s.step === name) === true;
+  const wentTheDistance = reached('verify') && reached('document');
   check(
-    'a healthy run is NOT killed by the watchdog',
-    run !== null && run.outcome !== 'killed_by_watchdog',
-    run ? `outcome=${run.outcome}, watchdog=${run.watchdog?.reason ?? 'silent'}` : 'no run produced',
+    'a healthy run completes the full pipeline without the watchdog stopping it',
+    run !== null && run.outcome !== 'killed_by_watchdog' && wentTheDistance,
+    run
+      ? `outcome=${run.outcome}, watchdog=${run.watchdog?.reason ?? 'silent'}, ` +
+        `steps=${run.steps.map((s) => s.step).join('>')}`
+      : 'no run produced',
   );
   await fetch(`${CHAOS}/inject`, { method: 'DELETE' });
 }

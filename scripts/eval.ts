@@ -196,7 +196,14 @@ async function runScenario(s: Scenario, index: number): Promise<Result> {
   while (Date.now() < deadline) {
     await sleep(10_000);
     const runs = await json<AgentRun[]>(`${AGENT}/runs`).catch(() => []);
-    const fresh = runs.find((r) => Date.parse(r.detectedAt) >= t0);
+    // Earliest after t0, not newest: /runs is newest-first, and a successful
+    // remediation is often followed by a second poller run that correctly
+    // blocks because the gap has already closed. Grading that follow-up scores
+    // the agent on the consequences of its own fix.
+    const mine = runs
+      .filter((r) => Date.parse(r.detectedAt) >= t0)
+      .sort((a, b) => Date.parse(a.detectedAt) - Date.parse(b.detectedAt));
+    const fresh = mine[0];
     if (fresh && (fresh.verifiedAt || fresh.outcome !== 'remediated')) {
       run = fresh;
       break;

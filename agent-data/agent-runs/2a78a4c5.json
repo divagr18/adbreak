@@ -1,0 +1,60 @@
+{
+  "runId": "2a78a4c5",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788028118374",
+    "channel": "sports-1",
+    "region": "us-east",
+    "deviceClass": "roku",
+    "startedAt": "2026-08-29T18:28:38.374Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-29T18:28:38.481Z",
+      "durationMs": 221340,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "package",
+          "condition",
+          "play",
+          "beacon"
+        ],
+        "affectedDimensions": {
+          "deviceClass": "roku",
+          "cdn": null,
+          "region": "us-east"
+        },
+        "reasoning": "The incident indicates 0% revenue realization (rrr) for Roku devices in the us-east region, which is a critical impact. The 'impression_gap_affected' metric, specific to Roku, is 1, meaning no impressions are being fired despite being expected. Conversely, 'impression_gap_others' is 0, confirming other device classes are unaffected. All upstream metrics like 'cdn_5xx', 'stitch_errors', 'ads_latency_p99', 'ads_pod_seconds_filled', and 'ads_nofill_rate' are healthy, ruling out widespread issues in the deliver, stitch, and decide stages. This points to a problem specific to how ads are prepared ('package', 'condition') for Roku clients, or an issue with the Roku client's ability to play the ads ('play') and consequently fire the impression beacons ('beacon')."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 1027,
+        "output": 267
+      },
+      "costUsd": 0.0009755999999999999,
+      "queries": [
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"} offset 4m) or vector(0)), 1))",
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"} offset 4m) or vector(0)), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "((sum(adbreak_ads_nofill_total) or vector(0)) - (sum(adbreak_ads_nofill_total offset 5m) or vector(0))) / clamp_min(sum(adbreak_ads_request_total) - sum(adbreak_ads_request_total offset 5m), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    }
+  ],
+  "outcome": "killed_by_watchdog",
+  "costUsd": 0.0009755999999999999,
+  "detectedAt": "2026-08-29T18:28:38.481Z",
+  "watchdog": {
+    "reason": "stall",
+    "detail": "step \"triage\" exceeded its 149.3s budget"
+  },
+  "error": "watchdog terminated the run: stall — step \"triage\" exceeded its 149.3s budget"
+}
