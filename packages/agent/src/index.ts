@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createService } from '@adbreak/shared';
 import { Incident } from './schemas.js';
-import { runIncident, type AgentRun } from './run.js';
+import { approveRun, runIncident, type AgentRun } from './run.js';
 import { scalar } from './tools/grafana.js';
 import { impressionGap } from './tools/metrics.js';
 import { renderRunList, renderRun } from './trace-ui.js';
@@ -292,6 +292,55 @@ svc.app.get('/runs/:id', (req, res) => {
   const run = listRuns().find((r) => r.runId === req.params.id);
   if (!run) return res.status(404).json({ error: 'no such run' });
   res.json(run);
+});
+
+/**
+ * Approve a plan the gate held for a human.
+ *
+ * Deliberately not on the admin router: approving a T2 remediation is an
+ * operator action on a specific incident, not a chaos/debug control, and the
+ * demo shows a human clicking it on the run's own trace page.
+ */
+svc.app.post('/runs/:id/approve', async (req, res) => {
+  const run = listRuns().find((r) => r.runId === req.params.id);
+  if (!run) return res.status(404).json({ error: 'no such run' });
+
+  const approvedBy = String(
+    (req.body as { approved_by?: string } | undefined)?.approved_by ?? 'operator',
+  );
+  svc.log.info('approval received', { run_id: run.runId, approved_by: approvedBy });
+
+  const result = await approveRun(run, approvedBy);
+  saveRun(result.run);
+  remediationTotal.inc({
+    runbook: result.run.runbookId ?? 'none',
+    tier: result.run.tier ?? 'none',
+    outcome: result.run.outcome === 'remediated' ? 'approved_remediated' : result.run.outcome,
+  });
+  if (result.run.verifiedAt) {
+    mttr.observe({}, (Date.parse(result.run.verifiedAt) - Date.parse(result.run.detectedAt)) / 1000);
+  }
+  // A refusal on stale preconditions is a correct outcome, not a server error.
+  res.status(result.ok ? 200 : 409).json({
+    ok: result.ok,
+    reason: result.reason,
+    outcome: result.run.outcome,
+    recovered: result.run.recovered ?? false,
+  });
+});
+
+/** The form target behind the Approve button on a run's trace page. */
+svc.app.post('/trace/:id/approve', async (req, res) => {
+  const run = listRuns().find((r) => r.runId === req.params.id);
+  if (!run) return res.status(404).type('html').send('<p>no such run</p>');
+  const result = await approveRun(run, 'operator (trace UI)');
+  saveRun(result.run);
+  remediationTotal.inc({
+    runbook: result.run.runbookId ?? 'none',
+    tier: result.run.tier ?? 'none',
+    outcome: result.run.outcome === 'remediated' ? 'approved_remediated' : result.run.outcome,
+  });
+  res.redirect(`/trace/${run.runId}`);
 });
 
 svc.app.get('/trace', (_req, res) => res.type('html').send(renderRunList(listRuns())));

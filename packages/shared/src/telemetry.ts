@@ -38,7 +38,18 @@ export const METRICS = {
   },
   adsFillRatio: {
     name: 'adbreak_ads_fill_ratio',
-    help: 'Fraction of requested pod seconds filled by the ADS',
+    // Seconds, not decisions. A healthy 28s pod against a 32s avail sits at
+    // 0.875 forever, so this is the F09 underfill signal and must never be
+    // read as a no-fill rate - see adsNoFill.
+    help: 'Fraction of requested pod SECONDS filled by the ADS (duration underfill; healthy baseline is below 1)',
+    labels: ['ads', 'region'] as const,
+  },
+  adsNoFill: {
+    // The unambiguous F04 signal. Without it the only evidence of no-fill was
+    // adsFillRatio, which is below 1 even on a perfectly healthy plant - and
+    // the agent duly refuted its own correct diagnosis on the strength of it.
+    name: 'adbreak_ads_nofill_total',
+    help: 'Ad requests answered with an empty VAST (no-fill)',
     labels: ['ads', 'region'] as const,
   },
   adsPodDuration: {

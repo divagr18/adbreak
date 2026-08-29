@@ -38,7 +38,20 @@ export const stitchErrors = (window = '5m'): string =>
   `sum(increase(adbreak_stitch_errors_total[${window}])) or vector(0)`;
 export const adsLatencyP99 = (window = '5m'): string =>
   `histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[${window}])))`;
+/**
+ * Pod SECONDS filled. Below 1 on a healthy plant (a 28s pod in a 32s avail),
+ * so this is the underfill signal - not evidence that the ad server is failing
+ * to return ads. For that, use adsNoFillRate.
+ */
 export const adsFillRatio = (): string => `avg(adbreak_ads_fill_ratio)`;
+
+/** Fraction of ad requests answered with an empty VAST. Zero on a healthy plant. */
+export const adsNoFillRate = (window = '5m'): string =>
+  // `or vector(0)` matters: on a healthy plant the no-fill series does not
+  // exist at all, and an absent series reads as null - the same ambiguity this
+  // metric was added to remove. Zero no-fills must say zero, not "unknown".
+  `(sum(increase(adbreak_ads_nofill_total[${window}])) or vector(0)) / ` +
+  `clamp_min(sum(increase(adbreak_ads_request_total[${window}])), 1)`;
 export const availSignalChain = (window = '10m'): string =>
   `sum(increase(adbreak_avail_signaled_total[${window}])) - sum(increase(adbreak_avail_manifested_total[${window}]))`;
 

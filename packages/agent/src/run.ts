@@ -19,7 +19,7 @@ import {
 import { FLASH, PRO, runStep, type StepUsage } from './llm.js';
 import * as M from './tools/metrics.js';
 import { createAnnotation, createIncident, queryPrometheus, scalar } from './tools/grafana.js';
-import { RUNBOOK_FOR, execute, loadRunbooks, substitute } from './tools/runbook.js';
+import { RUNBOOK_FOR, execute, loadRunbooks, substitute, type Runbook } from './tools/runbook.js';
 import { classify, gate, type Tier, type Verdict } from './policy/blast-radius.js';
 import { Supervisor, WatchdogKill } from './watchdog.js';
 
@@ -44,6 +44,8 @@ export interface AgentRun {
     | 'remediated'
     | 'awaiting_approval'
     | 'blocked'
+    /** Approved by a human, but the plant had moved on and the plan no longer applied. */
+    | 'blocked_on_approval'
     | 'no_action'
     | 'failed'
     | 'killed_by_watchdog';
@@ -58,6 +60,8 @@ export interface AgentRun {
   detectedAt: string;
   remediatedAt?: string;
   verifiedAt?: string;
+  approvedAt?: string;
+  approvedBy?: string;
   postmortem?: string;
   cfoBrief?: string;
   error?: string;
@@ -83,8 +87,10 @@ const PRECONDITIONS: Record<
     met: (v) => (v ?? 1) < 0.1,
   },
   fill_collapsed: {
-    query: () => M.adsFillRatio(),
-    met: (v) => (v ?? 1) < 0.5,
+    // No-fill rate, not the pod-seconds ratio: the latter reads 0.875 on a
+    // healthy plant, so thresholding it would have been an accident waiting.
+    query: () => M.adsNoFillRate(),
+    met: (v) => (v ?? 0) > 0.5,
   },
   fallback_available: {
     query: () => M.adsFallbackReady(),
@@ -126,6 +132,99 @@ const MIN_SAMPLES = Number(process.env.VERIFY_MIN_SAMPLES ?? 20);
 
 const nowIso = () => new Date().toISOString();
 
+export interface PreconditionResult {
+  id: string;
+  expr: string;
+  promql: string | null;
+  value: number | null;
+  met: boolean;
+  note?: string;
+}
+
+/**
+ * Measure a runbook's preconditions against live telemetry.
+ *
+ * Shared by the autonomous path and the approval path on purpose. A plan is a
+ * snapshot of a moment; by the time a human approves it the plant may have
+ * moved, so approval re-measures rather than trusting what was recorded.
+ */
+export async function checkPreconditions(
+  runbook: Runbook,
+  vars: Record<string, string>,
+): Promise<PreconditionResult[]> {
+  const out: PreconditionResult[] = [];
+  for (const p of runbook.preconditions) {
+    const check = PRECONDITIONS[p.id];
+    if (!check) {
+      // Fail closed. A runbook naming a precondition this agent cannot
+      // evaluate must not be executed on the assumption it would have passed.
+      out.push({
+        id: p.id,
+        expr: substitute(p.expr, vars),
+        promql: null,
+        value: null,
+        met: false,
+        note: 'unknown precondition id - failing closed',
+      });
+      continue;
+    }
+    const promql = check.query(vars.device, p.window);
+    const value = await scalar(promql);
+    out.push({ id: p.id, expr: substitute(p.expr, vars), promql, value, met: check.met(value) });
+  }
+  return out;
+}
+
+export interface VerifyResult {
+  recovered: boolean;
+  residualGap: number | null;
+  query: string;
+  samples: { at: string; gap: number | null }[];
+}
+
+/** Poll live telemetry until recovery is observed or the runbook's budget runs out. */
+export async function verifyRecovery(
+  runbook: Runbook,
+  device: string,
+  supervisor?: Supervisor,
+): Promise<VerifyResult> {
+  const verifier = VERIFICATION[runbook.id] ?? {
+    numerator: (d: string) => M.impressionsFired(d),
+    denominator: (d: string) => M.impressionsExpected(d),
+  };
+  const numQuery = verifier.numerator(device);
+  const denQuery = verifier.denominator(device);
+  const query = `(${numQuery}) / (${denQuery})  [delta since remediation]`;
+
+  // Baseline the counters at the moment the fix landed.
+  const firedAtFix = (await scalar(numQuery)) ?? 0;
+  const expectedAtFix = (await scalar(denQuery)) ?? 0;
+  const deadline = Date.now() + runbook.verification.timeout_s * 1000;
+
+  let residualGap: number | null = null;
+  let recovered = false;
+  const samples: { at: string; gap: number | null }[] = [];
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 10_000));
+    supervisor?.assertAlive();
+    const dFired = ((await scalar(numQuery)) ?? 0) - firedAtFix;
+    const dExpected = ((await scalar(denQuery)) ?? 0) - expectedAtFix;
+    // Wait for enough post-fix inventory to judge on; a ratio over three
+    // impressions is noise, not evidence.
+    if (dExpected < MIN_SAMPLES) {
+      samples.push({ at: nowIso(), gap: null });
+      continue;
+    }
+    residualGap = 1 - dFired / dExpected;
+    samples.push({ at: nowIso(), gap: residualGap });
+    if (residualGap < 0.05) {
+      recovered = true;
+      break;
+    }
+  }
+  return { recovered, residualGap, query, samples };
+}
+
 const usageFields = (u: StepUsage, costMultiplier = 1) => ({
   model: u.model,
   tokens: { input: u.inputTokens, output: u.outputTokens },
@@ -140,7 +239,8 @@ async function snapshot(deviceClass: string): Promise<Record<string, unknown>> {
     cdn_5xx: M.cdn5xx(),
     stitch_errors: M.stitchErrors(),
     ads_latency_p99: M.adsLatencyP99(),
-    ads_fill_ratio: M.adsFillRatio(),
+    ads_pod_seconds_filled: M.adsFillRatio(),
+    ads_nofill_rate: M.adsNoFillRate(),
     signal_chain_divergence: M.availSignalChain(),
     revenue_leak_usd: M.revenueLeakUsd(),
   };
@@ -309,8 +409,15 @@ export async function runIncident(
         'the CDN edge for one device class; F08 regional CDN 5xx on segments;',
         'F09 ad pod duration underfill.',
         'Key discriminator: if delivery is healthy (no CDN 5xx, no stitch errors, normal',
-        'ad latency and fill) but billable impressions are missing for a specific slice,',
-        'the failure is at the beacon stage, not upstream.',
+        'ad latency, no-fill rate at zero) but billable impressions are missing for a',
+        'specific slice, the failure is at the beacon stage, not upstream.',
+        'Read the two fill signals correctly, because they mean different things:',
+        'ads_nofill_rate is the fraction of ad requests answered with an empty VAST -',
+        'zero on a healthy plant, and the ONLY evidence for F04. ads_pod_seconds_filled',
+        'is pod seconds over avail seconds and sits at about 0.875 when everything is',
+        'working, because a 28s pod fills a 32s avail; a value near 0.875 is normal and',
+        'is NOT evidence of no-fill. Only a sustained drop well below that indicates F09',
+        'duration underfill.',
         'Scope the fault to the narrowest dimensions the evidence supports.',
         'Return JSON only.',
       ].join(' '),
@@ -326,7 +433,8 @@ export async function runIncident(
       other_device_classes_gap: await scalar(M.impressionGapOthers(incident.deviceClass, '5m')),
       cdn_5xx: await scalar(M.cdn5xx()),
       stitch_errors: await scalar(M.stitchErrors()),
-      ads_fill_ratio: await scalar(M.adsFillRatio()),
+      ads_pod_seconds_filled: await scalar(M.adsFillRatio()),
+      ads_nofill_rate: await scalar(M.adsNoFillRate()),
       signal_chain_divergence: await scalar(M.availSignalChain()),
     };
     const falsification = await runStep({
@@ -394,32 +502,7 @@ export async function runIncident(
     };
 
     // Preconditions are the runbook's own statement of when it is safe to run.
-    const preconditionResults = [];
-    for (const p of runbook.preconditions) {
-      const check = PRECONDITIONS[p.id];
-      if (!check) {
-        // Fail closed. A runbook naming a precondition this agent cannot
-        // evaluate must not be executed on the assumption it would have passed.
-        preconditionResults.push({
-          id: p.id,
-          expr: substitute(p.expr, vars),
-          promql: null,
-          value: null,
-          met: false,
-          note: 'unknown precondition id — failing closed',
-        });
-        continue;
-      }
-      const promql = check.query(vars.device, p.window);
-      const value = await scalar(promql);
-      preconditionResults.push({
-        id: p.id,
-        expr: substitute(p.expr, vars),
-        promql,
-        value,
-        met: check.met(value),
-      });
-    }
+    const preconditionResults = await checkPreconditions(runbook, vars);
     const preconditionsMet = preconditionResults.every((p) => p.met);
     const verdict = gate({ tier, eventMode: false, preconditionsMet, errorBudgetRemaining: 1 });
     run.verdict = verdict.verdict;
@@ -462,42 +545,8 @@ export async function runIncident(
     // Verification declares its own bound: it polls live telemetry for as long
     // as the runbook allows, plus a margin for the final query.
     t0 = begin('verify', runbook.verification.timeout_s * 1000 + 30_000);
-    const deadline = Date.now() + runbook.verification.timeout_s * 1000;
-    const verifier = VERIFICATION[runbook.id] ?? {
-      numerator: (d: string) => M.impressionsFired(d),
-      denominator: (d: string) => M.impressionsExpected(d),
-    };
-    const numQuery = verifier.numerator(vars.device);
-    const denQuery = verifier.denominator(vars.device);
-    const verifyQuery = `(${numQuery}) / (${denQuery})  [delta since remediation]`;
-
-    // Baseline the counters at the moment the fix landed.
-    const firedAtFix = (await scalar(numQuery)) ?? 0;
-    const expectedAtFix = (await scalar(denQuery)) ?? 0;
-
-    let gapNow: number | null = null;
-    let recovered = false;
-    const samples: { at: string; gap: number | null }[] = [];
-    while (Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 10_000));
-      supervisor?.assertAlive();
-      const firedNow = (await scalar(numQuery)) ?? 0;
-      const expectedNow = (await scalar(denQuery)) ?? 0;
-      const dFired = firedNow - firedAtFix;
-      const dExpected = expectedNow - expectedAtFix;
-      // Wait for enough post-fix inventory to judge on; a ratio over three
-      // impressions is noise, not evidence.
-      if (dExpected < MIN_SAMPLES) {
-        samples.push({ at: nowIso(), gap: null });
-        continue;
-      }
-      gapNow = 1 - dFired / dExpected;
-      samples.push({ at: nowIso(), gap: gapNow });
-      if (gapNow < 0.05) {
-        recovered = true;
-        break;
-      }
-    }
+    const v = await verifyRecovery(runbook, vars.device, supervisor);
+    const { recovered, residualGap: gapNow, query: verifyQuery, samples } = v;
     run.recovered = recovered;
     run.verifiedAt = nowIso();
     step('verify', 'code', t0, {
@@ -571,4 +620,101 @@ export async function runIncident(
     run.error = String(err);
     return run;
   }
+}
+
+/**
+ * Approve a plan the blast-radius gate stopped for a human.
+ *
+ * T2 exists so that a channel-wide change gets a person's judgement before it
+ * lands. That tier is decorative unless approving is actually possible, which
+ * is what this closes.
+ *
+ * The order of operations is the point. A plan is a snapshot of a moment, and
+ * the plant keeps moving while it waits for a human. So approval re-measures
+ * the runbook's preconditions against live telemetry BEFORE executing, and
+ * refuses if they no longer hold. Refusing is a first-class outcome, not an
+ * error: it means the agent noticed the world had changed and declined to
+ * apply a stale plan to it - exactly the recklessness the gate exists to stop.
+ */
+export async function approveRun(
+  run: AgentRun,
+  approvedBy: string,
+): Promise<{ ok: boolean; reason: string; run: AgentRun }> {
+  if (run.outcome !== 'awaiting_approval') {
+    return { ok: false, reason: `run is ${run.outcome}, not awaiting_approval`, run };
+  }
+  const planStep = run.steps.find((s) => s.step === 'plan');
+  const plan = planStep?.output as { runbookId?: string; params?: Record<string, string> } | undefined;
+  const runbook = plan?.runbookId ? runbooks.get(plan.runbookId) : undefined;
+  if (!runbook || !plan?.params) {
+    return { ok: false, reason: 'the stored plan names no runbook this agent knows', run };
+  }
+  const vars = plan.params;
+  run.approvedAt = nowIso();
+  run.approvedBy = approvedBy;
+
+  const stepAt = (name: string, startedAt: number, output: unknown): void => {
+    run.steps.push({
+      step: name,
+      kind: 'code',
+      startedAt: new Date(startedAt).toISOString(),
+      durationMs: Date.now() - startedAt,
+      output,
+    });
+  };
+
+  // --- Re-check against the plant as it is now, not as it was when planned ---
+  let t0 = Date.now();
+  const preconditions = await checkPreconditions(runbook, vars);
+  const stale = preconditions.filter((p) => !p.met);
+  stepAt('approve', t0, { approvedBy, preconditions, stale: stale.map((p) => p.id) });
+
+  if (stale.length > 0) {
+    run.outcome = 'blocked_on_approval';
+    await createAnnotation(
+      `AdBreak ${run.runId}: approval by ${approvedBy} REFUSED - preconditions no longer hold ` +
+        `(${stale.map((p) => p.id).join(', ')}); the plant has moved since the plan was written`,
+      ['adbreak', 'agent', 'approval-refused'],
+    ).catch(() => {});
+    return {
+      ok: false,
+      reason: `preconditions no longer hold: ${stale.map((p) => p.id).join(', ')}`,
+      run,
+    };
+  }
+
+  // --- Act, then verify the outcome on the same registry the agent uses ---
+  t0 = Date.now();
+  const executed = await execute(runbook.actions, vars);
+  run.remediatedAt = nowIso();
+  stepAt('act', t0, { executed: true, approvedBy, steps: executed });
+
+  t0 = Date.now();
+  const v = await verifyRecovery(runbook, vars.device);
+  run.recovered = v.recovered;
+  run.verifiedAt = nowIso();
+  stepAt('verify', t0, {
+    recovered: v.recovered,
+    residualGap: v.residualGap,
+    query: v.query,
+    samples: v.samples,
+  });
+
+  if (!v.recovered) {
+    await execute(runbook.rollback, vars);
+    stepAt('rollback', Date.now(), { rolledBack: true, reason: 'recovery not observed' });
+  }
+  run.outcome = v.recovered ? 'remediated' : 'failed';
+
+  await createAnnotation(
+    `AdBreak ${run.runId}: approved by ${approvedBy} - ${runbook.id} executed, ` +
+      `${v.recovered ? 'recovery verified' : 'NOT recovered, rolled back'}`,
+    ['adbreak', 'agent', v.recovered ? 'approved-remediated' : 'rollback'],
+  ).catch(() => {});
+
+  return {
+    ok: v.recovered,
+    reason: v.recovered ? 'remediated and verified' : 'executed but recovery was not observed; rolled back',
+    run,
+  };
 }

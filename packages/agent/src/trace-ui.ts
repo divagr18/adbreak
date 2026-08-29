@@ -94,14 +94,29 @@ export function renderRun(r: AgentRun): string {
     r.cfoBrief ? `<h2>CFO brief</h2><pre>${esc(r.cfoBrief)}</pre>` : '',
     r.error ? `<h2>Error</h2><pre class="bad">${esc(r.error)}</pre>` : '',
   ].join('');
+  // The gate holding a T2 plan is only meaningful if a human can say yes.
+  // Approval re-checks the preconditions against live telemetry first, so this
+  // button is a request to re-evaluate and act, not a rubber stamp.
+  const approve =
+    r.outcome === 'awaiting_approval'
+      ? `<form method="post" action="/trace/${esc(r.runId)}/approve" class="approve">
+           <button type="submit">Approve and execute</button>
+           <span>Preconditions are re-measured against live telemetry before anything runs.</span>
+         </form>`
+      : '';
+  const approvedBy = r.approvedBy
+    ? `<div><div class="l">approved by</div><div class="v">${esc(r.approvedBy)}</div></div>`
+    : '';
   return page(
     `AdBreak run ${r.runId}`,
     `<h1><a href="/trace">← runs</a> &nbsp; ${esc(r.runId)}</h1>
+     ${approve}
      <div class="sub">${esc(r.incident.deviceClass)} / ${esc(r.incident.region)} · detected ${esc(
        r.detectedAt.replace('T', ' ').slice(0, 19),
      )}</div>
      <div class="kv">
        <div><div class="l">outcome</div><div class="v">${outcomePill(r.outcome)}</div></div>
+       ${approvedBy}
        <div><div class="l">failure class</div><div class="v">${esc(r.failureClass ?? '—')}</div></div>
        <div><div class="l">runbook</div><div class="v">${esc(r.runbookId ?? '—')}</div></div>
        <div><div class="l">blast radius</div><div class="v">${esc(r.tier ?? '—')} / ${esc(

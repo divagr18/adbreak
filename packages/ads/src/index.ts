@@ -43,6 +43,7 @@ const adsRequest = svc.counter(METRICS.adsRequest);
 const adsDuration = svc.histogram(METRICS.adsResponseDuration);
 const adsPodDuration = svc.gauge(METRICS.adsPodDuration);
 const adsFillRatio = svc.gauge(METRICS.adsFillRatio);
+const adsNoFill = svc.counter(METRICS.adsNoFill);
 
 /** Rolling fill accounting per region, so the gauge reflects recent behaviour. */
 const fill = new Map<string, { requested: number; filled: number }>();
@@ -156,6 +157,7 @@ svc.app.get('/vast', async (req, res) => {
   const sellableS = availS * knobs.max_pod_ratio;
   const pod = noFill ? [] : buildPod(sellableS);
   const podS = pod.reduce((sum, c) => sum + c.durationS, 0);
+  if (noFill) adsNoFill.inc({ ads: ADS_ID, region });
 
   adsPodDuration.set({ ads: ADS_ID, region }, podS);
   recordFill(region, availS, podS);
