@@ -114,6 +114,45 @@ services:
       - ./data:/data
     ports: ["8086:3000"]
 
+  # The agent. Deliberately does NOT mount ./data: that directory holds
+  # ground-truth.jsonl, the record of what chaos actually injected. It is the
+  # answer key, and an agent that can read it is not diagnosing anything.
+  agent:
+    <<: *node-service
+    command: ["npx", "tsx", "watch", "packages/agent/src/index.ts"]
+    volumes:
+      - ./packages:/app/packages
+      - ./runbooks:/app/runbooks:ro
+      - ./agent-data:/agent-data
+      - ${APPDATA}/gcloud/application_default_credentials.json:/gcloud/adc.json:ro
+    environment:
+      <<: *node-env
+      GOOGLE_APPLICATION_CREDENTIALS: /gcloud/adc.json
+      GOOGLE_GENAI_USE_ENTERPRISE: "true"
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-adbreak-hack-2026}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-us-central1}
+      GRAFANA_URL: ${GRAFANA_URL:-}
+      GRAFANA_SERVICE_ACCOUNT_TOKEN: ${GRAFANA_SERVICE_ACCOUNT_TOKEN:-}
+      MCP_GRAFANA_URL: http://mcp-grafana:8000/sse
+      RUNBOOK_DIR: /app/runbooks
+      RUN_DIR: /agent-data/agent-runs
+    ports: ["8090:3000"]
+    depends_on: [mcp-grafana]
+
+  # The Grafana MCP server as a first-class service. The agent reaches Grafana
+  # only through this - it is the judged integration - and running it over SSE
+  # rather than spawning `docker run` per query keeps the agent out of
+  # docker-in-docker. -allowed-hosts is required because the SSE transport
+  # rejects non-loopback Host headers by default (DNS-rebinding protection).
+  mcp-grafana:
+    image: mcp/grafana:latest
+    command: ["-address", "0.0.0.0:8000", "-allowed-hosts", "*"]
+    environment:
+      GRAFANA_URL: ${GRAFANA_URL:-}
+      GRAFANA_SERVICE_ACCOUNT_TOKEN: ${GRAFANA_SERVICE_ACCOUNT_TOKEN:-}
+    ports: ["8000:8000"]
+    restart: unless-stopped
+
   # Ships plant metrics and logs to Grafana Cloud. Runs only when the GC_*
   # ingest credentials are present; the plant is fully functional without it.
   alloy:

@@ -14,6 +14,7 @@ prometheus.scrape "plant" {
     {"__address__" = "player-fleet:3000",     "component" = "player-fleet"},
     {"__address__" = "beacon-collector:3000", "component" = "beacon-collector"},
     {"__address__" = "chaos-injector:3000",   "component" = "chaos-injector"},
+    {"__address__" = "agent:3000",            "component" = "agent"},
   ]
   forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
   scrape_interval = "15s"
@@ -63,7 +64,7 @@ discovery.relabel "plant" {
   // their own formats at high volume, which is cost without signal here.
   rule {
     source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
-    regex         = "playout|packager|ads|ssai|edge|player-fleet|beacon-collector|chaos-injector"
+    regex         = "playout|packager|ads|ssai|edge|player-fleet|beacon-collector|chaos-injector|agent"
     action        = "keep"
   }
 }

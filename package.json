@@ -11,7 +11,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "typecheck": "tsc -b packages/shared packages/playout packages/packager packages/ads packages/ssai packages/edge packages/player-fleet packages/beacon-collector packages/chaos-injector",
+    "typecheck": "tsc -b packages/shared packages/playout packages/packager packages/ads packages/ssai packages/edge packages/player-fleet packages/beacon-collector packages/chaos-injector packages/agent",
     "test": "vitest run",
     "dev": "docker compose up --build"
   },

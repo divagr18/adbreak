@@ -14,6 +14,7 @@ COPY packages/edge/package.json packages/edge/package.json
 COPY packages/player-fleet/package.json packages/player-fleet/package.json
 COPY packages/beacon-collector/package.json packages/beacon-collector/package.json
 COPY packages/chaos-injector/package.json packages/chaos-injector/package.json
+COPY packages/agent/package.json packages/agent/package.json
 RUN npm install --no-audit --no-fund
 COPY packages ./packages
 CMD ["npx", "tsx", "packages/playout/src/index.ts"]

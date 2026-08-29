@@ -1,0 +1,46 @@
+id: rb-beacon-fallback
+version: 1
+title: Fail over to server-side beacon emission for an affected device class
+applies_to: [F07]
+# One device class inside the sessions we serve. Not the content path, not a
+# whole region — see policy/blast-radius.ts for what each tier permits.
+blast_radius: T1
+
+preconditions:
+  - id: gap_is_real
+    description: the affected device class really is losing impressions
+    expr: 'impression_gap{device_class="$device"} > 0.4'
+    window: 3m
+  - id: scoped_not_global
+    description: other device classes are healthy, so this is not a global outage
+    expr: 'impression_gap{device_class!="$device"} < 0.1'
+    window: 3m
+
+predicted_impact:
+  rrr_delta: +0.9
+  description: >
+    Beacons for $device stop traversing the CDN edge and are emitted directly by
+    the SSAI, so impressions resume for that class within one ad break.
+  risk: >
+    Duplicate impressions if client beacons resume mid-window. Mitigated: the
+    collector deduplicates on session|avail|pos|creative|event, so a duplicate
+    is discarded rather than billed twice.
+
+actions:
+  - type: config_patch
+    target: ssai
+    method: POST
+    path: /admin/beacon-mode
+    body: { device_class: $device, mode: server_side }
+
+verification:
+  expr: 'impression_gap{device_class="$device"} < 0.05'
+  window: 2m
+  timeout_s: 150
+
+rollback:
+  - type: config_patch
+    target: ssai
+    method: POST
+    path: /admin/beacon-mode
+    body: { device_class: $device, mode: client_side }
