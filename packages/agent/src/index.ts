@@ -106,6 +106,13 @@ async function firingInstances(): Promise<AlertInstance[]> {
 
 /** One run per (device class, region) at a time; incidents are not re-entrant. */
 const inFlight = new Set<string>();
+/**
+ * After a successful remediation, hold off on that device class for a while.
+ * The rate windows that detect a leak still contain the leak for minutes after
+ * it stops, so without this the agent re-opens an incident it just closed.
+ */
+const remediatedUntil = new Map<string, number>();
+const COOLDOWN_MS = Number(process.env.REMEDIATION_COOLDOWN_MS ?? 10 * 60_000);
 let busy = false;
 
 async function handle(instance: AlertInstance): Promise<void> {
@@ -118,6 +125,15 @@ async function handle(instance: AlertInstance): Promise<void> {
   // the same incident over and over. Confirm the leak is still happening right
   // now, on a short window, before doing anything about it.
   const deviceClass = labels.device_class ?? 'unknown';
+  const until = remediatedUntil.get(deviceClass) ?? 0;
+  if (Date.now() < until) {
+    svc.log.info('within the cooldown of a successful remediation, standing down', {
+      device_class: deviceClass,
+      cooldown_ends: new Date(until).toISOString(),
+    });
+    return;
+  }
+
   const liveGap = await scalar(impressionGap(deviceClass, '3m'));
   if (liveGap === null || liveGap < 0.2) {
     svc.log.info('alert still firing but the leak has stopped, standing down', {
@@ -164,6 +180,9 @@ async function handle(instance: AlertInstance): Promise<void> {
         tier: run.tier ?? 'unknown',
         outcome: run.outcome,
       });
+    }
+    if (run.outcome === 'remediated') {
+      remediatedUntil.set(incident.deviceClass, Date.now() + COOLDOWN_MS);
     }
     if (run.verifiedAt) {
       mttr.observe({}, (Date.parse(run.verifiedAt) - Date.parse(run.detectedAt)) / 1000);

@@ -141,10 +141,13 @@ export async function runIncident(
     // --- 3. Correlate (parallel branches) ---------------------------------
     t0 = Date.now();
     const gapRows = await queryPrometheus(M.gapByDeviceCdn('5m'));
+    // Name the field for what it means and state the direction. Handed a bare
+    // "gap: 0.6", a model read it as an impression *gain* and concluded the
+    // failing device class was the healthy one.
     const sliceTable = gapRows.map((r) => ({
       device_class: r.metric.device_class,
       cdn: r.metric.cdn,
-      gap: Number(r.value.toFixed(4)),
+      fraction_of_impressions_lost: Number(r.value.toFixed(4)),
     }));
 
     const [signalBranch, sliceBranch] = await Promise.all([
@@ -167,7 +170,8 @@ export async function runIncident(
         schema: Evidence,
         instruction: [
           'You are localising a revenue incident across dimensions.',
-          'Given impression gap broken out by device class and CDN, identify exactly',
+          'Every value named fraction_of_impressions_lost is the share of billable impressions that never reached the collector: 0.0 means healthy, 1.0 means total loss. A HIGH value is BAD. ',
+          'Given impression loss broken out by device class and CDN, identify exactly',
           'which slice is losing impressions and which are healthy. State whether the',
           'fault is scoped to a device class, a CDN, both, or neither.',
           'Set branch to "dimensional_slice". Return JSON only.',
@@ -193,6 +197,7 @@ export async function runIncident(
       schema: Hypothesis,
       instruction: [
         'You are the root-cause analyst for a live ad-insertion pipeline.',
+        'Every value named fraction_of_impressions_lost is the share of billable impressions that never reached the collector: 0.0 means healthy, 1.0 means total loss. A HIGH value is BAD. ',
         'Failure classes: F01 cue suppressed at playout; F02 cue dropped by packager;',
         'F03 ad-server latency spike; F04 empty VAST / no-fill; F07 beacon blackhole at',
         'the CDN edge for one device class; F08 regional CDN 5xx on segments;',
