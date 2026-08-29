@@ -32,6 +32,12 @@ pre { background:#141922; border:1px solid #1e242e; border-radius:6px; padding:1
 .llm { color:#c9a8ff; border-color:#3d2b5c; background:#1a1425; }
 .kv { display:flex; gap:26px; flex-wrap:wrap; margin-bottom:18px; }
 .kv div { min-width:110px; } .kv .l { color:#7d8694; font-size:12px; } .kv .v { font-size:16px; }
+.approve { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin:0 0 20px;
+  padding:12px 14px; border:1px solid #5c4a24; border-radius:6px; background:#251f10; }
+.approve button { font:inherit; font-weight:600; cursor:pointer; padding:7px 16px; border-radius:5px;
+  border:1px solid #6ee7a8; background:#10251b; color:#6ee7a8; }
+.approve button:hover { background:#163226; }
+.approve span { color:#c8b78a; font-size:12.5px; }
 `;
 
 const page = (title: string, body: string): string =>

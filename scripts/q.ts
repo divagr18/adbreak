@@ -95,8 +95,12 @@ async function health(): Promise<void> {
  */
 async function baseline(device: string): Promise<void> {
   const rows: [string, string][] = [
-    [`gap for ${device} (gap_is_real, needs > 0.4)`, gap(`device_class="${device}"`)],
-    [`gap for others (scoped_not_global, needs < 0.1)`, gap(`device_class!="${device}"`)],
+    // 3m because that is the window the runbook declares. Reporting these at
+    // the 5m default would show the operator a number the agent never reads -
+    // and increase() over bursty counters is measurably window-sensitive, so
+    // the difference is not cosmetic.
+    [`gap for ${device} (gap_is_real, needs > 0.4)`, gap(`device_class="${device}"`, '3m')],
+    [`gap for others (scoped_not_global, needs < 0.1)`, gap(`device_class!="${device}"`, '3m')],
     ['no-fill rate (fill_collapsed, needs > 0.5)',
       '(sum(increase(adbreak_ads_nofill_total[5m])) or vector(0)) / clamp_min(sum(increase(adbreak_ads_request_total[5m])), 1)'],
     ['cdn 5xx (delivery_healthy, needs == 0)', 'sum(increase(adbreak_cdn_requests_total{status=~"5.."}[5m])) or vector(0)'],
@@ -125,4 +129,7 @@ async function main(): Promise<void> {
   }
 }
 
-void main();
+// Only run as a CLI. The gates import query()/scalar() from here so there is
+// one definition of "ask the plant", not a copy per script.
+const invokedDirectly = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (invokedDirectly) void main();

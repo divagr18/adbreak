@@ -10,6 +10,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { scalar as promScalar } from './q.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CHAOS = process.env.CHAOS ?? 'http://localhost:8086';
@@ -169,13 +170,25 @@ async function main(): Promise<void> {
     run.recovered === true && run.outcome === 'remediated',
     `recovered=${run.recovered}, outcome=${run.outcome}`,
   );
+  // This check used to assert only that the fault was still injected, which
+  // passed on runs where nothing recovered at all - it was reporting on the
+  // chaos injector, not on the agent. It now requires both halves of the claim:
+  // the fault is still in place AND impressions for the victim are flowing
+  // again. Routing around a fault is the interesting result; the fault having
+  // quietly expired is not.
   const stillBlackholed = await json<{ id: number }[]>(`http://localhost:8084/admin/faults`).catch(
     () => [],
   );
+  const postFixGap = await promScalar(
+    `1 - (sum(increase(adbreak_beacon_fired_total{event="impression",device_class="${VICTIM}"}[2m])) / ` +
+      `clamp_min(sum(increase(adbreak_beacon_expected_total{event="impression",device_class="${VICTIM}"}[2m])), 1))`,
+  );
   check(
     'revenue recovered while the fault was still injected',
-    stillBlackholed.length > 0,
-    `${stillBlackholed.length} edge fault(s) still active — the fix routed around it rather than removing it`,
+    stillBlackholed.length > 0 && postFixGap !== null && postFixGap < 0.1,
+    `${stillBlackholed.length} edge fault(s) still active, ${VICTIM} impression gap now ` +
+      `${postFixGap === null ? 'no data' : postFixGap.toFixed(3)} — the fix routed around the fault ` +
+      `rather than the fault having gone away`,
   );
 
   // --- artifacts --------------------------------------------------------
