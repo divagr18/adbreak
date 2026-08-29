@@ -1,0 +1,13 @@
+# Demo/gate profile: breaks every 60s instead of 120s.
+#
+# Recovery can only be observed once beacons from the NEXT break arrive, so the
+# break cadence is the floor on measured MTTR. A real match carries 30-50
+# breaks, so this is a fixture-density choice rather than a shortcut - and the
+# agent already meets its targets at the 120s default.
+# Use with: SCHEDULE_PATH=/app/schedules/sports-1-demo.yaml
+channel: sports-1
+periodic:
+  every_s: 60
+  duration_s: 32
+  break_type: mid_roll
+  lead_time_s: 8
