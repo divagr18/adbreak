@@ -588,6 +588,13 @@ The build is a vertical slice: the thinnest end-to-end path that makes the F07 d
 > - **Sample traces per session, not per trace.** Every span of a break shares
 >   that break's trace id, so ratio sampling keeps or drops the whole break;
 >   200 sessions produced a single 1,002-span trace before this.
+> - **Instrumentation must never be able to fail the request it measures.** The
+>   exemplar call returned 500 from the ad server for exactly the sampled
+>   sessions (prom-client needs `enableExemplars` before it accepts the
+>   exemplar form), so 5% of pods came back empty and were slated — while
+>   throughput, dashboards and the ledger all looked healthy. Every telemetry
+>   call site is now wrapped. This is the failure mode the watchdog in Phase D
+>   exists for, found in our own code first.
 
 - OTel metrics per the §8 contract — **metrics first, logs second, traces only on the avail lifecycle**; exemplars only on `ads_response_duration_seconds`
 - Two dashboards, not four: **delivery-health** (the all-green one) and **revenue-realization** (RRR + ledger)
