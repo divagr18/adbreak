@@ -1,0 +1,201 @@
+{
+  "uid": "adbreak-agent",
+  "title": "AdBreak — Agent Fleet Health",
+  "description": "The agent is watched by the same stack it operates. Every run, step, token, dollar and intervention lands here — including the times its own supervisor had to stop it.",
+  "tags": ["adbreak", "agent"],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": { "from": "now-3h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Watchdog interventions",
+      "description": "Runs the agent's own supervisor terminated. Not zero by design — it is exercised.",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(adbreak_agent_watchdog_intervention_total) or vector(0)",
+          "legendFormat": "interventions"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Runs remediated",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(adbreak_agent_run_total{outcome=\"remediated\"}) or vector(0)",
+          "legendFormat": "remediated"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Total model spend",
+      "description": "Cost of every incident the agent has handled.",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 4 } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(adbreak_agent_cost_usd_total) or vector(0)",
+          "legendFormat": "spend"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Cost per incident",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.15 },
+              { "color": "red", "value": 0.5 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(adbreak_agent_cost_usd_total) / clamp_min(sum(adbreak_agent_run_total), 1)",
+          "legendFormat": "per incident"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Runs by outcome",
+      "description": "remediated · no_action · awaiting_approval · blocked · killed_by_watchdog",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 5 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 15, "stacking": { "mode": "normal" } } } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (increase(adbreak_agent_run_total[10m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Watchdog interventions by reason",
+      "description": "stall — a step overran its budget · loop — the same call three times · runaway — spend past the ceiling",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 5 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 20, "stacking": { "mode": "normal" } } } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason) (increase(adbreak_agent_watchdog_intervention_total[10m]))",
+          "legendFormat": "{{reason}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Step duration p95",
+      "description": "What the stall rule is judged against — 3x a step's own p95, floored at 90s.",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 14 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, step) (rate(adbreak_agent_step_duration_seconds_bucket[30m])))",
+          "legendFormat": "{{step}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "heatmap",
+      "title": "Step duration distribution",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 14 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (le) (increase(adbreak_agent_step_duration_seconds_bucket[5m]))",
+          "format": "heatmap",
+          "legendFormat": "{{le}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Tokens by model and step",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (model, step) (increase(adbreak_agent_tokens_total[10m]))",
+          "legendFormat": "{{model}} / {{step}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Detection and recovery time",
+      "description": "MTTD: alert fired to agent picking it up. MTTR: detection to verified recovery.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(adbreak_agent_mttd_seconds_bucket[30m])))",
+          "legendFormat": "MTTD p95"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(adbreak_agent_mttr_seconds_bucket[30m])))",
+          "legendFormat": "MTTR p95"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Remediations by runbook, tier and outcome",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 31 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (runbook, tier, outcome) (increase(adbreak_agent_remediation_total[10m]))",
+          "legendFormat": "{{runbook}} {{tier}} / {{outcome}}"
+        }
+      ]
+    }
+  ]
+}

@@ -137,6 +137,79 @@ async function provisionAlert(): Promise<void> {
     ],
   };
 
+  await upsertRule(rule);
+}
+
+/**
+ * The agent stopping itself must never be silent. If its own supervisor had to
+ * terminate a run, a human hears about it from the operator's own alerting -
+ * not from a log line nobody is reading.
+ */
+async function provisionWatchdogAlert(): Promise<void> {
+  const rule = {
+    title: 'Agent watchdog intervention',
+    ruleGroup: 'adbreak-agent',
+    folderUID: 'adbreak',
+    noDataState: 'OK',
+    execErrState: 'Error',
+    for: '0s',
+    labels: { severity: 'warning', team: 'adbreak', component: 'agent' },
+    annotations: {
+      summary: 'The agent watchdog terminated a run.',
+      description:
+        'A stall, loop or cost runaway tripped the deterministic supervisor. The partial trace is kept at /trace for whoever picks this up.',
+    },
+    condition: 'C',
+    data: [
+      {
+        refId: 'A',
+        relativeTimeRange: { from: 900, to: 0 },
+        datasourceUid: PROM_UID,
+        model: {
+          refId: 'A',
+          editorMode: 'code',
+          instant: false,
+          range: true,
+          expr: 'sum by (reason) (increase(adbreak_agent_watchdog_intervention_total[10m]))',
+        },
+      },
+      {
+        refId: 'B',
+        datasourceUid: '__expr__',
+        model: {
+          refId: 'B',
+          type: 'reduce',
+          datasource: { type: '__expr__', uid: '__expr__' },
+          expression: 'A',
+          reducer: 'max',
+          settings: { mode: 'dropNN' },
+        },
+      },
+      {
+        refId: 'C',
+        datasourceUid: '__expr__',
+        model: {
+          refId: 'C',
+          type: 'threshold',
+          datasource: { type: '__expr__', uid: '__expr__' },
+          expression: 'B',
+          conditions: [
+            {
+              type: 'query',
+              evaluator: { type: 'gt', params: [0] },
+              operator: { type: 'and' },
+              query: { params: ['B'] },
+              reducer: { type: 'last', params: [] },
+            },
+          ],
+        },
+      },
+    ],
+  };
+  await upsertRule(rule);
+}
+
+async function upsertRule(rule: { title: string } & Record<string, unknown>): Promise<void> {
   const existing = (await api('/api/v1/provisioning/alert-rules', 'GET')) as { uid: string; title: string }[];
   const prior = existing.find((r) => r.title === rule.title);
   if (prior) {
@@ -151,6 +224,7 @@ async function provisionAlert(): Promise<void> {
 async function main(): Promise<void> {
   await provisionDashboards();
   await provisionAlert();
+  await provisionWatchdogAlert();
   console.log('\nprovisioned.');
 }
 

@@ -16,8 +16,10 @@ import {
   contextFromTraceparent,
   inSpan,
   traceparentOf,
+  NOMINAL_SPOT_S,
   createService,
-  impressionValueUsd,
+  expectedSpotValueUsd,
+  nominalSpots,
   parseCueWindows,
   parsePlaylist,
   sampled,
@@ -407,10 +409,18 @@ async function decide(session: Session, cue: CueWindow): Promise<void> {
   // the ratio swung +/-14% on a healthy plant — occasionally above 1.0, which
   // realized/expected can never legitimately be. Ticking both counters at the
   // same wall-clock moment is what makes the SLO readable at all.
-  for (const c of creatives) {
-    const creativeStartMs = cue.startMs + c.offsetS * 1000;
+  //
+  // Expectation is booked against the avail the PLAYOUT SIGNALLED, not against
+  // whatever the ad server happened to return. Booking per returned creative
+  // made a break that sold nothing invisible to the SLO: no creatives meant no
+  // expected revenue, so RRR stayed healthy while the break earned zero. An
+  // unsold break is exactly the silent revenue failure this system exists to
+  // catch, so the denominator has to exist whether or not the pod filled.
+  const spots = nominalSpots(cue.durationS);
+  for (let spot = 0; spot < spots; spot++) {
+    const spotStartMs = cue.startMs + spot * NOMINAL_SPOT_S * 1000;
     for (const ev of BEACON_EVENTS) {
-      const dueMs = creativeStartMs + EVENT_FRACTION[ev] * c.durationS * 1000;
+      const dueMs = spotStartMs + EVENT_FRACTION[ev] * NOMINAL_SPOT_S * 1000;
       schedule(dueMs, () =>
         beaconExpected.inc({
           event: ev,
@@ -421,17 +431,22 @@ async function decide(session: Session, cue: CueWindow): Promise<void> {
         }),
       );
     }
-    schedule(creativeStartMs, () =>
+    schedule(spotStartMs, () =>
       revenueExpected.inc(
         {
           channel: CHANNEL,
           region: session.region,
-          advertiser: c.advertiser,
+          // Priced blended: at signal time nobody has bought the spot yet.
+          advertiser: 'unsold',
           device_class: session.deviceClass,
         },
-        impressionValueUsd(c.advertiser, session.region),
+        expectedSpotValueUsd(session.region),
       ),
     );
+  }
+
+  for (const c of creatives) {
+    const creativeStartMs = cue.startMs + c.offsetS * 1000;
 
     // Server-side emission for this device class, if a runbook has switched it
     // on. Scheduled at the same instants the player would have used, so the

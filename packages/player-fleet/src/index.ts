@@ -29,6 +29,11 @@ const fetchErrors = svc.counter({
   help: 'Playlist/segment fetch failures seen by the fleet',
   labels: ['kind'] as const,
 });
+const beaconsSuppressed = svc.counter({
+  name: 'adbreak_fleet_beacons_suppressed_total',
+  help: 'Beacons not fired because the session could not load the media',
+  labels: ['event', 'device_class'] as const,
+});
 /** Client-side *attempts*. Deliberately not named like the collector's
  *  adbreak_beacon_fired_total, which counts server-side *receipts* — the
  *  difference between the two is precisely the loss inside the CDN. */
@@ -49,6 +54,8 @@ interface Player {
   headers: Record<string, string>;
   query: string;
   scheduled: Set<string>;
+  /** False while this session's media fetches are failing. */
+  segmentOk: boolean;
 }
 
 function makePlayer(i: number): Player {
@@ -77,10 +84,19 @@ function makePlayer(i: number): Player {
       isp,
     }).toString(),
     scheduled: new Set(),
+    segmentOk: true,
   };
 }
 
 async function fireBeacon(p: Player, event: string, url: string): Promise<void> {
+  // A player that could not fetch the media does not report having played it.
+  // Reporting impressions for ads that never rendered would make a delivery
+  // outage cost nothing on the revenue side, which is both wrong and the
+  // reason F08 was previously undetectable.
+  if (!p.segmentOk) {
+    beaconsSuppressed.inc({ event, device_class: p.deviceClass });
+    return;
+  }
   try {
     const res = await fetch(url, { headers: p.headers });
     // A rejected beacon is NOT a fired beacon — counting it either way would
@@ -140,6 +156,7 @@ async function cycle(p: Player): Promise<void> {
     const uri = playlist.split(/\r?\n/).filter((l) => l && !l.startsWith('#')).pop();
     if (uri) {
       const segRes = await fetch(`${EDGE_URL}${uri}`, { headers: p.headers });
+      p.segmentOk = segRes.ok;
       if (!segRes.ok) fetchErrors.inc({ kind: 'segment' });
       else await segRes.arrayBuffer();
     }
