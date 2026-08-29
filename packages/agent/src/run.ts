@@ -234,8 +234,8 @@ const usageFields = (u: StepUsage, costMultiplier = 1) => ({
 /** Everything the model is allowed to see about the current state of the plant. */
 async function snapshot(deviceClass: string): Promise<Record<string, unknown>> {
   const queries: Record<string, string> = {
-    impression_gap_affected: M.impressionGap(deviceClass, '5m'),
-    impression_gap_others: M.impressionGapOthers(deviceClass, '5m'),
+    impression_gap_affected: M.impressionGap(deviceClass, '4m'),
+    impression_gap_others: M.impressionGapOthers(deviceClass, '4m'),
     cdn_5xx: M.cdn5xx(),
     stitch_errors: M.stitchErrors(),
     ads_latency_p99: M.adsLatencyP99(),
@@ -337,12 +337,12 @@ export async function runIncident(
     // --- 3. Correlate (parallel branches) ---------------------------------
     t0 = begin('correlate');
     await injectChaos('correlate');
-    supervisor?.noteToolCall('query_prometheus', { expr: M.gapByDeviceCdn('5m') });
-    const gapRows = await queryPrometheus(M.gapByDeviceCdn('5m'));
+    supervisor?.noteToolCall('query_prometheus', { expr: M.gapByDeviceCdn('4m') });
+    const gapRows = await queryPrometheus(M.gapByDeviceCdn('4m'));
     if (chaos?.mode === 'loop') {
       // Re-issue the identical query so the loop rule has something to catch.
       for (let i = 0; i < 3; i++) {
-        supervisor?.noteToolCall('query_prometheus', { expr: M.gapByDeviceCdn('5m') });
+        supervisor?.noteToolCall('query_prometheus', { expr: M.gapByDeviceCdn('4m') });
         supervisor?.assertAlive();
       }
     }
@@ -391,7 +391,7 @@ export async function runIncident(
     });
     step('correlate:dimensional_slice', 'llm', t0, sliceBranch.output, {
       ...usageFields(sliceBranch.usage, costMul),
-      queries: [M.gapByDeviceCdn('5m')],
+      queries: [M.gapByDeviceCdn('4m')],
     });
 
     // --- 4. Hypothesize ---------------------------------------------------
@@ -430,7 +430,7 @@ export async function runIncident(
     t0 = begin('falsify');
     await injectChaos('falsify');
     const probes = {
-      other_device_classes_gap: await scalar(M.impressionGapOthers(incident.deviceClass, '5m')),
+      other_device_classes_gap: await scalar(M.impressionGapOthers(incident.deviceClass, '4m')),
       cdn_5xx: await scalar(M.cdn5xx()),
       stitch_errors: await scalar(M.stitchErrors()),
       ads_pod_seconds_filled: await scalar(M.adsFillRatio()),
@@ -458,7 +458,7 @@ export async function runIncident(
     });
     step('falsify', 'llm', t0, falsification.output, {
       ...usageFields(falsification.usage, costMul),
-      queries: [M.impressionGapOthers(incident.deviceClass, '5m'), M.cdn5xx(), M.stitchErrors()],
+      queries: [M.impressionGapOthers(incident.deviceClass, '4m'), M.cdn5xx(), M.stitchErrors()],
     });
 
     if (!falsification.output.survived) {

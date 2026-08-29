@@ -7,31 +7,36 @@
 /**
  * Share of billable impressions that never arrived, over a window.
  *
- * Built from an exact counter delta (`now - offset`) rather than `increase()`,
- * and the difference is not academic. `increase()` extrapolates the rate to the
- * window edges, which is fine for smooth counters and badly wrong for these:
- * impressions land in a burst every 120s, so a 3m window that happens to catch
- * two bursts of expected against one of fired swings the ratio by a third. It
- * was measured reading 0.000 for healthy device classes and 0.285 two minutes
- * later with nothing wrong, which is more than enough to block a correct
- * remediation on the scoped_not_global precondition.
+ * Two properties here were chosen from measurement on a settled plant, not
+ * from reasoning - an earlier round of reasoning about this got it wrong twice.
  *
- * An offset delta does no extrapolation at all. Numerator and denominator are
- * booked at the same instants - the impression beacon fires at the spot
- * boundary the expectation was booked against - so what edge effect remains
- * cancels between them.
+ * First, an exact counter delta rather than `increase()`. increase()
+ * extrapolates to the window edges, which is fine for smooth counters and
+ * wrong for these: impressions arrive in a burst every 120s. Sampled ten times
+ * on a healthy plant, increase() never once read zero, drifting between -0.41
+ * and +0.22; the delta form read exactly zero in five of eight samples.
+ *
+ * Second, the window must be a whole multiple of the 120s break cadence.
+ * Measured over seven samples with nothing wrong: 4m ranged 0.009 and 10m
+ * ranged 0.025, while 3m ranged 0.759 and 5m ranged 0.405. A partial break at
+ * the window edge contributes its expectations before its impressions land.
+ * The old 3m precondition window was the worst available choice.
+ *
+ * The `or vector(0)` guards matter after a restart: a bare subtraction against
+ * a series that did not exist one window ago yields no data, and a null gap
+ * reads as "no fault" - which would silently block a correct remediation.
  */
 const gapExpr = (selector: string, window: string): string =>
-  `1 - ((sum(adbreak_beacon_fired_total{event="impression"${selector}}) - ` +
-  `sum(adbreak_beacon_fired_total{event="impression"${selector}} offset ${window})) / ` +
-  `clamp_min(sum(adbreak_beacon_expected_total{event="impression"${selector}}) - ` +
-  `sum(adbreak_beacon_expected_total{event="impression"${selector}} offset ${window}), 1))`;
+  `1 - (((sum(adbreak_beacon_fired_total{event="impression"${selector}}) or vector(0)) - ` +
+  `(sum(adbreak_beacon_fired_total{event="impression"${selector}} offset ${window}) or vector(0))) / ` +
+  `clamp_min((sum(adbreak_beacon_expected_total{event="impression"${selector}}) or vector(0)) - ` +
+  `(sum(adbreak_beacon_expected_total{event="impression"${selector}} offset ${window}) or vector(0)), 1))`;
 
-export const impressionGap = (deviceClass: string, window = '2m'): string =>
+export const impressionGap = (deviceClass: string, window = '4m'): string =>
   gapExpr(`,device_class="${deviceClass}"`, window);
 
 /** Same, for everything except one device class — proves a fault is scoped. */
-export const impressionGapOthers = (deviceClass: string, window = '2m'): string =>
+export const impressionGapOthers = (deviceClass: string, window = '4m'): string =>
   gapExpr(`,device_class!="${deviceClass}"`, window);
 
 /**
@@ -80,7 +85,7 @@ export const availSignalChain = (window = '10m'): string =>
 
 /** Gap broken out by device x cdn — the slice that localises F07. */
 /** The slice table the agent localises a fault from. Same delta, grouped. */
-export const gapByDeviceCdn = (window = '5m'): string =>
+export const gapByDeviceCdn = (window = '4m'): string =>
   `1 - ((sum by (device_class, cdn) (adbreak_beacon_fired_total{event="impression"}) - ` +
   `sum by (device_class, cdn) (adbreak_beacon_fired_total{event="impression"} offset ${window})) / ` +
   `clamp_min(sum by (device_class, cdn) (adbreak_beacon_expected_total{event="impression"}) - ` +

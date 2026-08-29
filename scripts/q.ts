@@ -67,20 +67,19 @@ export async function scalar(expr: string): Promise<number | null> {
 const fmt = (v: number | null): string => (v === null ? 'no data' : v.toFixed(4));
 
 /**
- * Exact counter deltas, not `increase()`.
+ * Exact counter deltas over a whole number of 120s break cadences.
  *
- * These counters step in a burst every 120s, and increase() extrapolates the
- * rate to the window edges. A 3m window catching two bursts of expected
- * against one of fired swings the ratio by a third — measured at 0.000 for
- * healthy device classes and 0.285 two minutes later with nothing wrong, which
- * is enough to block a correct remediation on scoped_not_global. An offset
- * delta does no extrapolation at all.
+ * Both properties were measured on a settled plant, not reasoned about.
+ * increase() never read zero across ten healthy samples (-0.41 to +0.22); the
+ * delta form read exactly zero in five of eight. And window length matters
+ * more than the form: over seven healthy samples 4m ranged 0.009 and 10m
+ * ranged 0.025, while 3m ranged 0.759 and 5m ranged 0.405.
  */
 const gap = (selector: string, window: string): string =>
-  `1 - ((sum(adbreak_beacon_fired_total{event="impression"${selector}}) - ` +
-  `sum(adbreak_beacon_fired_total{event="impression"${selector}} offset ${window})) / ` +
-  `clamp_min(sum(adbreak_beacon_expected_total{event="impression"${selector}}) - ` +
-  `sum(adbreak_beacon_expected_total{event="impression"${selector}} offset ${window}), 1))`;
+  `1 - (((sum(adbreak_beacon_fired_total{event="impression"${selector}}) or vector(0)) - ` +
+  `(sum(adbreak_beacon_fired_total{event="impression"${selector}} offset ${window}) or vector(0))) / ` +
+  `clamp_min((sum(adbreak_beacon_expected_total{event="impression"${selector}}) or vector(0)) - ` +
+  `(sum(adbreak_beacon_expected_total{event="impression"${selector}} offset ${window}) or vector(0)), 1))`;
 
 const NOFILL_RATE =
   '((sum(adbreak_ads_nofill_total) or vector(0)) - ' +
@@ -106,7 +105,10 @@ async function health(): Promise<void> {
     ],
     ['no-fill rate (5m)', NOFILL_RATE, (v) => (v ?? 1) < 0.01],
     ['pod seconds filled', 'avg(adbreak_ads_fill_ratio)', (v) => v !== null && v > 0.8],
-    ['impression gap, all devices', gap('', '5m'), (v) => v !== null && Math.abs(v) < 0.1],
+    // 10m: five whole breaks, and the steadiest window measured. A settle
+    // check that flaps on a healthy plant is how the last Gate D run sat in
+    // its own wait loop for fifteen minutes.
+    ['impression gap, all devices', gap('', '10m'), (v) => v !== null && Math.abs(v) < 0.05],
   ];
   let allOk = true;
   for (const [name, expr, ok] of checks) {
@@ -124,14 +126,14 @@ async function health(): Promise<void> {
 /**
  * What each runbook precondition reads right now.
  *
- * At the window the runbook itself declares (3m), not a convenient default —
+ * At the window the runbook itself declares (4m), not a convenient default —
  * showing the operator a number the agent never reads is how you end up
  * debugging the difference between two measurements instead of the system.
  */
 async function baseline(device: string): Promise<void> {
   const rows: [string, string][] = [
-    [`gap for ${device} (gap_is_real, needs > 0.4)`, gap(`,device_class="${device}"`, '3m')],
-    ['gap for others (scoped_not_global, needs < 0.1)', gap(`,device_class!="${device}"`, '3m')],
+    [`gap for ${device} (gap_is_real, needs > 0.4)`, gap(`,device_class="${device}"`, '4m')],
+    ['gap for others (scoped_not_global, needs < 0.1)', gap(`,device_class!="${device}"`, '4m')],
     ['no-fill rate (fill_collapsed, needs > 0.5)', NOFILL_RATE],
     ['cdn 5xx (delivery_healthy, needs == 0)', CDN_5XX],
     ['ads fallback ready (needs == 1)', 'max(adbreak_ssai_ads_fallback_ready)'],
@@ -143,9 +145,9 @@ async function baseline(device: string): Promise<void> {
   console.log('\nper device class:');
   const byDevice =
     '1 - ((sum by (device_class) (adbreak_beacon_fired_total{event="impression"}) - ' +
-    'sum by (device_class) (adbreak_beacon_fired_total{event="impression"} offset 3m)) / ' +
+    'sum by (device_class) (adbreak_beacon_fired_total{event="impression"} offset 4m)) / ' +
     'clamp_min(sum by (device_class) (adbreak_beacon_expected_total{event="impression"}) - ' +
-    'sum by (device_class) (adbreak_beacon_expected_total{event="impression"} offset 3m), 1))';
+    'sum by (device_class) (adbreak_beacon_expected_total{event="impression"} offset 4m), 1))';
   for (const r of (await query(byDevice)).sort((a, b) => b.value - a.value)) {
     console.log(`  ${(r.metric.device_class ?? '?').padEnd(10)} ${r.value.toFixed(4)}`);
   }

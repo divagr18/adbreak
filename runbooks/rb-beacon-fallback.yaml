@@ -10,11 +10,13 @@ preconditions:
   - id: gap_is_real
     description: the affected device class really is losing impressions
     expr: 'impression_gap{device_class="$device"} > 0.4'
-    window: 3m
+    # 4m, not 3m: the gap must be read over a whole number of 120s breaks.
+    # At 3m it ranged 0.759 on a healthy plant; at 4m, 0.009.
+    window: 4m
   - id: scoped_not_global
     description: other device classes are healthy, so this is not a global outage
     expr: 'impression_gap{device_class!="$device"} < 0.1'
-    window: 3m
+    window: 4m
 
 predicted_impact:
   rrr_delta: +0.9

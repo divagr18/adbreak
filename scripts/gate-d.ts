@@ -13,6 +13,7 @@
  *   npx tsx scripts/gate-d.ts
  */
 import { readFileSync } from 'node:fs';
+import { scalar } from './q.js';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -89,6 +90,39 @@ async function reset(): Promise<void> {
   await fetch(`${AGENT}/admin/cooldown`, { method: 'DELETE' }).catch(() => {});
 }
 
+/**
+ * Wait until the plant has actually recovered from the previous scenario.
+ *
+ * Clearing a fault is not the same as the plant being well again: F08
+ * suppresses beacons for every session that could not fetch its media, and
+ * those losses stay inside the measurement windows for minutes afterwards.
+ * Running the next scenario straight into that grades the agent on the wreckage
+ * of the last one - which is exactly what happened on the first Gate D run,
+ * where a 1/N impression deficit from an earlier F08 looked convincingly like
+ * a broken metric.
+ *
+ * Ten minutes is five whole break cadences, which reads the gap exactly.
+ */
+async function settle(maxMs = 12 * 60_000): Promise<void> {
+  const gap =
+    '1 - ((sum(adbreak_beacon_fired_total{event="impression"}) - ' +
+    'sum(adbreak_beacon_fired_total{event="impression"} offset 10m)) / ' +
+    'clamp_min(sum(adbreak_beacon_expected_total{event="impression"}) - ' +
+    'sum(adbreak_beacon_expected_total{event="impression"} offset 10m), 1))';
+  const deadline = Date.now() + maxMs;
+  process.stdout.write('  settling');
+  while (Date.now() < deadline) {
+    const v = await scalar(gap).catch(() => null);
+    if (v !== null && Math.abs(v) < 0.03) {
+      console.log(` ok (gap ${v.toFixed(4)})`);
+      return;
+    }
+    process.stdout.write('.');
+    await sleep(30_000);
+  }
+  console.log(' gave up waiting — the plant is still not quiet');
+}
+
 /** Fire an alert and wait for the run it produces to reach a terminal state. */
 async function triggerAndWait(device: string, maxMs = 8 * 60_000): Promise<AgentRun | null> {
   const t0 = Date.now();
@@ -116,6 +150,7 @@ async function triggerAndWait(device: string, maxMs = 8 * 60_000): Promise<Agent
  */
 async function watchdogKill(mode: 'stall' | 'loop' | 'cost', label: string): Promise<void> {
   await reset();
+  await settle();
   await post(`${AGENT}/admin/agent-chaos`, {
     mode,
     step: mode === 'stall' ? 'triage' : undefined,
@@ -147,6 +182,7 @@ async function watchdogKill(mode: 'stall' | 'loop' | 'cost', label: string): Pro
  */
 async function healthyRunSurvives(): Promise<void> {
   await reset();
+  await settle();
   await post(`${CHAOS}/inject`, { fault: 'F07', params: { device_class: 'roku' }, duration_s: 600 });
   await sleep(150_000);
 
@@ -169,6 +205,7 @@ async function healthyRunSurvives(): Promise<void> {
  */
 async function approvalPath(): Promise<void> {
   await reset();
+  await settle();
   const t0 = Date.now();
   await post(`${CHAOS}/inject`, { fault: 'F04', params: {}, duration_s: 900 });
   await sleep(150_000);
@@ -235,6 +272,7 @@ async function approvalPath(): Promise<void> {
  */
 async function escalatesWhenUnmapped(): Promise<void> {
   await reset();
+  await settle();
   const t0 = Date.now();
   await post(`${CHAOS}/inject`, { fault: 'F08', params: { cdn: 'cdn-west' }, duration_s: 600 });
   await sleep(150_000);
