@@ -303,6 +303,7 @@ async function decide(session: Session, cue: CueWindow): Promise<void> {
     session_id: session.id,
     creatives: creatives.map((c) => c.id),
     slate_s: slateS,
+    traced,
   });
 }
 

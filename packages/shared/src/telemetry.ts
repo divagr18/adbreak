@@ -33,6 +33,8 @@ export const METRICS = {
     help: 'ADS response latency',
     labels: ['ads', 'region'] as const,
     buckets: [0.05, 0.1, 0.2, 0.35, 0.5, 0.75, 1, 1.5, 2, 3, 5],
+    // Exemplars: a p99 spike here links to the trace of the offending avail.
+    enableExemplars: true,
   },
   adsFillRatio: {
     name: 'adbreak_ads_fill_ratio',
@@ -78,6 +80,8 @@ export const METRICS = {
     name: 'adbreak_beacon_fired_total',
     help: 'Tracking beacons actually received by the collector',
     labels: ['event', 'device_class', 'cdn', 'isp', 'region'] as const,
+    // Exemplars: a revenue gap links to the trace of the break behind it.
+    enableExemplars: true,
   },
   impressionGapRatio: {
     name: 'adbreak_impression_gap_ratio',

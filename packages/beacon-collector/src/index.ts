@@ -81,9 +81,17 @@ function record(
   };
   // With an exemplar attached, a gap on the impression panel links straight to
   // the trace of the break that produced it.
-  if (exemplar) {
-    beaconFired.inc({ labels: firedLabels, value: 1, exemplarLabels: exemplar });
-  } else {
+  // Never let exemplar bookkeeping cost us a billing record: the impression is
+  // already written to the ledger above, and dropping the counter increment
+  // would understate realized revenue.
+  try {
+    if (exemplar) {
+      beaconFired.inc({ labels: firedLabels, value: 1, exemplarLabels: exemplar });
+    } else {
+      beaconFired.inc(firedLabels);
+    }
+  } catch (err) {
+    svc.log.warn('beacon counter failed, retrying without exemplar', { err: String(err) });
     beaconFired.inc(firedLabels);
   }
 

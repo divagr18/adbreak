@@ -21,6 +21,12 @@ type MetricSpec = {
   help: string;
   labels: readonly string[];
   buckets?: readonly number[];
+  /**
+   * Opt in per metric. Without this, prom-client binds inc()/observe() to the
+   * non-exemplar variants, and passing the {labels, value, exemplarLabels}
+   * form is then read as a *labels object* — which throws.
+   */
+  enableExemplars?: boolean;
 };
 
 export interface ServiceContext {
@@ -67,6 +73,7 @@ export function createService(component: string): ServiceContext {
           help: spec.help,
           labelNames: [...spec.labels],
           registers: [registry],
+          enableExemplars: spec.enableExemplars ?? false,
         }),
       ),
     gauge: (spec) =>
@@ -86,6 +93,7 @@ export function createService(component: string): ServiceContext {
           labelNames: [...spec.labels],
           buckets: spec.buckets ? [...spec.buckets] : undefined,
           registers: [registry],
+          enableExemplars: spec.enableExemplars ?? false,
         }),
       ),
     admin: (router) => app.use('/admin', router),

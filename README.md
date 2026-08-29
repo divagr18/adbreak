@@ -34,6 +34,14 @@ curl localhost:8086/faults          # the whole catalogue, self-describing
 curl -X DELETE localhost:8086/inject
 ```
 
+### Working on the plant
+
+Source lives under `packages/` and is bind-mounted into the containers, but
+**apply code changes with `docker compose restart <service>`**. `docker compose
+up -d` is a no-op when only mounted source changed, and `tsx watch` does not
+reload either: inotify events don't cross a Docker bind mount from a Windows
+host, so the container keeps running the code it started with.
+
 ## Telemetry
 
 Metrics, logs and traces ship to Grafana Cloud via Grafana Alloy. Provision the

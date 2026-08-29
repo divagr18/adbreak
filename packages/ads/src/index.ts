@@ -183,14 +183,22 @@ svc.app.get('/vast', async (req, res) => {
     exemplar = exemplarLabels(span);
     span.end();
   }
-  if (exemplar) {
-    adsDuration.observe({
-      labels: { ads: ADS_ID, region },
-      value: elapsedS,
-      exemplarLabels: exemplar,
-    });
-  } else {
-    adsDuration.observe({ ads: ADS_ID, region }, elapsedS);
+  // Telemetry must never be able to fail the request it is measuring. This
+  // exact call once threw inside the handler and returned 500 for every
+  // sampled session — the instrumentation broke ad serving for the sessions
+  // it was meant to observe. Record the observation, swallow anything else.
+  try {
+    if (exemplar) {
+      adsDuration.observe({
+        labels: { ads: ADS_ID, region },
+        value: elapsedS,
+        exemplarLabels: exemplar,
+      });
+    } else {
+      adsDuration.observe({ ads: ADS_ID, region }, elapsedS);
+    }
+  } catch (err) {
+    svc.log.warn('latency observation failed', { err: String(err) });
   }
 
   svc.log.info(noFill ? 'no-fill (F04)' : 'pod returned', {
