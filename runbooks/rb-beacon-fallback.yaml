@@ -36,7 +36,9 @@ actions:
 verification:
   expr: 'impression_gap{device_class="$device"} < 0.05'
   window: 2m
-  timeout_s: 150
+  # One break cadence plus scrape lag: recovery cannot be observed until the
+  # next break has actually run and its beacons have been scraped.
+  timeout_s: 240
 
 rollback:
   - type: config_patch

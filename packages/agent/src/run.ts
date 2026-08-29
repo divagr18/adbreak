@@ -96,20 +96,33 @@ const PRECONDITIONS: Record<
   },
 };
 
-/** How each runbook's success is measured, and what counts as recovered. */
+/**
+ * How each runbook's success is measured.
+ *
+ * Both are expressed as a ratio of counter DELTAS taken since the remediation
+ * landed, not as a sliding window. A window wide enough to be stable still
+ * contains the incident, so it cannot show recovery until the faulty break
+ * ages out of it - which made verification depend on whether the fix happened
+ * to land mid-break. Deltas ask the only question that matters: of the
+ * impressions expected since the fix, how many arrived?
+ */
 const VERIFICATION: Record<
   string,
-  { query: (device: string, window: string) => string; recovered: (v: number | null) => boolean }
+  { numerator: (device: string) => string; denominator: (device: string) => string }
 > = {
   'rb-beacon-fallback': {
-    query: (device, window) => M.impressionGap(device, window),
-    recovered: (v) => v !== null && v < 0.05,
+    numerator: (device) => M.impressionsFired(device),
+    denominator: (device) => M.impressionsExpected(device),
   },
   'rb-ads-failover': {
-    query: (_d, window) => M.slateSecondsRate(window),
-    recovered: (v) => v !== null && v < 1,
+    // The cached pod bills like any other, so recovery reads the same way.
+    numerator: () => M.impressionsFired(),
+    denominator: () => M.impressionsExpected(),
   },
 };
+
+/** Expected impressions that must accrue post-fix before a verdict is credible. */
+const MIN_SAMPLES = Number(process.env.VERIFY_MIN_SAMPLES ?? 20);
 
 const nowIso = () => new Date().toISOString();
 
@@ -450,11 +463,17 @@ export async function runIncident(
     // as the runbook allows, plus a margin for the final query.
     t0 = begin('verify', runbook.verification.timeout_s * 1000 + 30_000);
     const deadline = Date.now() + runbook.verification.timeout_s * 1000;
-    const verifier = VERIFICATION[runbook.id];
-    const verifyQuery = verifier
-      ? verifier.query(vars.device, runbook.verification.window)
-      : M.impressionGap(vars.device, runbook.verification.window);
-    const isRecovered = verifier ? verifier.recovered : (v: number | null) => v !== null && v < 0.05;
+    const verifier = VERIFICATION[runbook.id] ?? {
+      numerator: (d: string) => M.impressionsFired(d),
+      denominator: (d: string) => M.impressionsExpected(d),
+    };
+    const numQuery = verifier.numerator(vars.device);
+    const denQuery = verifier.denominator(vars.device);
+    const verifyQuery = `(${numQuery}) / (${denQuery})  [delta since remediation]`;
+
+    // Baseline the counters at the moment the fix landed.
+    const firedAtFix = (await scalar(numQuery)) ?? 0;
+    const expectedAtFix = (await scalar(denQuery)) ?? 0;
 
     let gapNow: number | null = null;
     let recovered = false;
@@ -462,9 +481,19 @@ export async function runIncident(
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 10_000));
       supervisor?.assertAlive();
-      gapNow = await scalar(verifyQuery);
+      const firedNow = (await scalar(numQuery)) ?? 0;
+      const expectedNow = (await scalar(denQuery)) ?? 0;
+      const dFired = firedNow - firedAtFix;
+      const dExpected = expectedNow - expectedAtFix;
+      // Wait for enough post-fix inventory to judge on; a ratio over three
+      // impressions is noise, not evidence.
+      if (dExpected < MIN_SAMPLES) {
+        samples.push({ at: nowIso(), gap: null });
+        continue;
+      }
+      gapNow = 1 - dFired / dExpected;
       samples.push({ at: nowIso(), gap: gapNow });
-      if (isRecovered(gapNow)) {
+      if (gapNow < 0.05) {
         recovered = true;
         break;
       }

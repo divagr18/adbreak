@@ -53,3 +53,20 @@ export const slateSecondsRate = (window = '2m'): string =>
 
 /** 1 when the SSAI holds a cached pod it could fall back to. */
 export const adsFallbackReady = (): string => `max(adbreak_ssai_ads_fallback_ready) or vector(0)`;
+
+/**
+ * Raw counters, for delta-based verification.
+ *
+ * A sliding-window gap still contains the incident for the length of the
+ * window, so it cannot show recovery until the bad break ages out. Comparing
+ * counter deltas taken since the moment of remediation measures only what has
+ * happened SINCE the fix, which is the actual question being asked.
+ */
+export const impressionsFired = (deviceClass?: string): string => {
+  const sel = deviceClass ? `,device_class="${deviceClass}"` : '';
+  return `sum(adbreak_beacon_fired_total{event="impression"${sel}})`;
+};
+export const impressionsExpected = (deviceClass?: string): string => {
+  const sel = deviceClass ? `,device_class="${deviceClass}"` : '';
+  return `sum(adbreak_beacon_expected_total{event="impression"${sel}})`;
+};

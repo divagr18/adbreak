@@ -42,7 +42,7 @@ actions:
 verification:
   expr: 'slate_seconds_rate < 1'
   window: 2m
-  timeout_s: 150
+  timeout_s: 240
 
 rollback:
   - type: config_patch
