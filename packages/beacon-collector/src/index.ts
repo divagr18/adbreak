@@ -84,15 +84,19 @@ function record(
   // Never let exemplar bookkeeping cost us a billing record: the impression is
   // already written to the ledger above, and dropping the counter increment
   // would understate realized revenue.
+  // ALWAYS the object form: enabling exemplars rebinds inc() to the exemplar
+  // variant, which reads its first argument as a config object. Passing a bare
+  // labels object there silently drops every label — 95% of beacons landed on
+  // one unlabelled series, leaving the impression-gap panel reading the traced
+  // 5% only.
   try {
-    if (exemplar) {
-      beaconFired.inc({ labels: firedLabels, value: 1, exemplarLabels: exemplar });
-    } else {
-      beaconFired.inc(firedLabels);
-    }
+    beaconFired.inc({
+      labels: firedLabels,
+      value: 1,
+      ...(exemplar ? { exemplarLabels: exemplar } : {}),
+    });
   } catch (err) {
-    svc.log.warn('beacon counter failed, retrying without exemplar', { err: String(err) });
-    beaconFired.inc(firedLabels);
+    svc.log.warn('beacon counter failed', { err: String(err) });
   }
 
   // The impression beacon is the billing record: this line, and only this

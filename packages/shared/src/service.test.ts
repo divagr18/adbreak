@@ -44,6 +44,22 @@ describe('metrics with exemplars', () => {
     ).toThrow();
   });
 
+  it('keeps labels when exemplars are enabled — the silent data-loss trap', async () => {
+    // Enabling exemplars rebinds inc() to read its first argument as a config
+    // object. Passing a bare labels object there drops every label: in the
+    // running plant this put 14,977 beacons on one unlabelled series while the
+    // labelled ones held only the traced 5%.
+    const c = svc.counter({
+      name: 'test_labelled_total',
+      help: 'test',
+      labels: ['kind'] as const,
+      enableExemplars: true,
+    });
+    c.inc({ labels: { kind: 'keeper' }, value: 1 });
+    const metric = await svc.registry.getSingleMetricAsString('test_labelled_total');
+    expect(metric).toContain('kind="keeper"');
+  });
+
   it('still accepts the plain form', () => {
     const c = svc.counter({ name: 'test_plain_total', help: 'test', labels: ['kind'] as const });
     expect(() => c.inc({ kind: 'x' })).not.toThrow();

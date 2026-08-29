@@ -187,16 +187,15 @@ svc.app.get('/vast', async (req, res) => {
   // exact call once threw inside the handler and returned 500 for every
   // sampled session — the instrumentation broke ad serving for the sessions
   // it was meant to observe. Record the observation, swallow anything else.
+  // ALWAYS the object form — see the beacon collector for the same trap: with
+  // exemplars enabled, observe(labels, value) is read as observe(config) and
+  // the observation lands unlabelled.
   try {
-    if (exemplar) {
-      adsDuration.observe({
-        labels: { ads: ADS_ID, region },
-        value: elapsedS,
-        exemplarLabels: exemplar,
-      });
-    } else {
-      adsDuration.observe({ ads: ADS_ID, region }, elapsedS);
-    }
+    adsDuration.observe({
+      labels: { ads: ADS_ID, region },
+      value: elapsedS,
+      ...(exemplar ? { exemplarLabels: exemplar } : {}),
+    });
   } catch (err) {
     svc.log.warn('latency observation failed', { err: String(err) });
   }
