@@ -9,6 +9,7 @@
 import { startTracing } from '@adbreak/shared';
 startTracing('ssai');
 
+import { Router } from 'express';
 import {
   BEACON_EVENTS,
   METRICS,
@@ -32,6 +33,26 @@ const CHANNEL = process.env.CHANNEL ?? 'sports-1';
 const SEGMENT_S = Number(process.env.SEGMENT_S ?? 4);
 const SLATE_ID = 'slate';
 const SESSION_TTL_MS = 5 * 60_000;
+const COLLECTOR_URL = process.env.COLLECTOR_URL ?? 'http://beacon-collector:3000';
+
+/**
+ * Per-device-class beacon emission mode — the surface `rb-beacon-fallback`
+ * actuates.
+ *
+ * Normally the player fires tracking beacons itself, through the CDN edge.
+ * When a device class is switched to `server_side`, the SSAI additionally
+ * fires them from here, straight at the collector. That genuinely routes
+ * around a blackholed edge (F07), which is what makes the remediation real
+ * rather than cosmetic.
+ *
+ * Emission is additive, not a swap: the collector deduplicates on
+ * session|avail|pos|creative|event, so leaving the client URLs in place cannot
+ * double-bill, and a player on a healthy path keeps working untouched.
+ */
+type BeaconMode = 'client_side' | 'server_side';
+const beaconMode = new Map<string, BeaconMode>();
+const modeFor = (deviceClass: string): BeaconMode =>
+  beaconMode.get(deviceClass) ?? 'client_side';
 
 /**
  * Fraction of sessions whose per-session work is traced. Every span for one
@@ -55,6 +76,25 @@ const EVENT_FRACTION: Record<string, number> = {
   complete: 1,
 };
 
+/**
+ * Fire a tracking beacon from the server, bypassing the CDN edge entirely by
+ * swapping only the URL origin — every query parameter the collector bills on
+ * (session, avail, pos, creative, and the trace parent) is preserved.
+ */
+async function fireServerSide(clientUrl: string, sessionId: string, event: string): Promise<void> {
+  try {
+    const u = new URL(clientUrl);
+    const direct = new URL(COLLECTOR_URL);
+    u.protocol = direct.protocol;
+    u.host = direct.host;
+    const res = await fetch(u.toString());
+    serverBeacons.inc({ event, status: res.ok || res.status === 204 ? 'ok' : String(res.status) });
+  } catch (err) {
+    serverBeacons.inc({ event, status: 'error' });
+    svc.log.warn('server-side beacon failed', { session_id: sessionId, event, err: String(err) });
+  }
+}
+
 /** Run at a wall-clock moment; immediately if that moment has already passed. */
 function schedule(atMs: number, fn: () => void): void {
   const delay = atMs - Date.now();
@@ -68,6 +108,12 @@ const stitchErrors = svc.counter(METRICS.stitchErrors);
 const manifestLatency = svc.histogram(METRICS.manifestLatency);
 const beaconExpected = svc.counter(METRICS.beaconExpected);
 const revenueExpected = svc.counter(METRICS.revenueExpected);
+/** Server-side beacon emission, so the remediation's effect is observable. */
+const serverBeacons = svc.counter({
+  name: 'adbreak_ssai_server_beacons_total',
+  help: 'Tracking beacons fired server-side, bypassing the CDN edge',
+  labels: ['event', 'status'] as const,
+});
 
 interface Session {
   id: string;
@@ -297,6 +343,21 @@ async function decide(session: Session, cue: CueWindow): Promise<void> {
         impressionValueUsd(c.advertiser, session.region),
       ),
     );
+
+    // Server-side emission for this device class, if a runbook has switched it
+    // on. Scheduled at the same instants the player would have used, so the
+    // billing record looks identical apart from having actually arrived.
+    for (const ev of BEACON_EVENTS) {
+      const url = c.tracking[ev];
+      if (!url) continue;
+      const dueMs = creativeStartMs + EVENT_FRACTION[ev] * c.durationS * 1000;
+      schedule(dueMs, () => {
+        // Re-read the mode at fire time, not at decision time: a runbook that
+        // fires mid-break must take effect for the beacons still to come.
+        if (modeFor(session.deviceClass) !== 'server_side') return;
+        void fireServerSide(url, session.id, ev);
+      });
+    }
   }
   svc.log.info('avail decided', {
     avail_id: cue.availId,
@@ -472,6 +533,21 @@ svc.app.get('/session/:id/tracking', (req, res) => {
       })),
   );
 });
+
+const admin = Router();
+admin.get('/beacon-mode', (_req, res) => res.json(Object.fromEntries(beaconMode)));
+admin.post('/beacon-mode', (req, res) => {
+  const deviceClass = String(req.body?.device_class ?? '');
+  const mode = req.body?.mode === 'server_side' ? 'server_side' : 'client_side';
+  if (!deviceClass) {
+    res.status(400).json({ error: 'device_class required' });
+    return;
+  }
+  beaconMode.set(deviceClass, mode);
+  svc.log.warn('beacon mode changed', { device_class: deviceClass, mode });
+  res.json(Object.fromEntries(beaconMode));
+});
+svc.admin(admin);
 
 svc.app.get('/admin/state', (_req, res) =>
   res.json({
