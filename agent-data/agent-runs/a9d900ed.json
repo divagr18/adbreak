@@ -1,0 +1,124 @@
+{
+  "runId": "a9d900ed",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788024311452",
+    "channel": "sports-1",
+    "region": "eu",
+    "deviceClass": "roku",
+    "startedAt": "2026-08-29T16:32:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:25:11.494Z",
+      "durationMs": 21381,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "deliver",
+          "play",
+          "beacon"
+        ],
+        "affectedDimensions": {
+          "deviceClass": "roku",
+          "cdn": null,
+          "region": "eu"
+        },
+        "reasoning": "The Revenue Realization Rate (RRR) is 0 and the impression gap for Roku devices is 84.5%, indicating a near-total failure to realize revenue for this device class. Other device classes show no such gap. Ad fill rates are high, ad no-fill rates are zero, and there are no CDN 5xx errors or stitching errors, suggesting upstream stages (signal, package, decide, condition, stitch) are functioning correctly. The issue is highly localized to Roku devices and points to a failure in the delivery of ad content to the player, the ad playback itself, or the beaconing from the player."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 875,
+        "output": 207
+      },
+      "costUsd": 0.38999999999999996,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"}[5m])), 1))",
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "(sum(increase(adbreak_ads_nofill_total[5m])) or vector(0)) / clamp_min(sum(increase(adbreak_ads_request_total[5m])), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:25:32.875Z",
+      "durationMs": 13879,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "impression_gap_affected",
+          "impression_gap_others",
+          "cdn_5xx",
+          "stitch_errors",
+          "ads_latency_p99",
+          "ads_pod_seconds_filled",
+          "ads_nofill_rate",
+          "signal_chain_divergence",
+          "revenue_leak_usd"
+        ],
+        "findings": [
+          "A revenue leak of 5.58 USD is observed.",
+          "A significant impression gap of 84.5% is present for Roku devices, indicating that a large majority of expected impressions are not being realized or reported.",
+          "Ad decisioning is healthy with a 0% no-fill rate, an 87.5% ad pod fill rate, and an acceptable P99 latency of 199ms.",
+          "Ad stitching shows no errors (0 stitch errors).",
+          "CDN delivery is healthy with no 5xx errors reported.",
+          "Other device classes do not exhibit a similar impression gap, suggesting the issue is device-specific."
+        ],
+        "conclusion": "The data rules out ad decisioning, ad stitching, and CDN delivery as the cause of the revenue loss. The primary finding is a high impression gap exclusively on Roku devices, suggesting a problem at the final delivery or client-side impression beaconing stage for these specific devices, which is part of the ad-insertion signal chain."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 827,
+        "output": 334
+      },
+      "costUsd": 0.54155,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:25:32.875Z",
+      "durationMs": 13879,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [],
+        "findings": [
+          "The slice with device_class: 'roku' and cdn: 'cdn-east' is losing 100% of impressions (fraction_of_impressions_lost: 1).",
+          "The slice with device_class: 'roku' and cdn: 'cdn-west' is losing 100% of impressions (fraction_of_impressions_lost: 1).",
+          "All other device_class and cdn combinations (android, firetv, ios, smarttv, web across cdn-east and cdn-west) are healthy, showing no significant impression loss (fraction_of_impressions_lost: -0.0229)."
+        ],
+        "conclusion": "The fault is scoped to the 'roku' device class, as it experiences total impression loss regardless of the CDN. All other device classes and CDNs are healthy."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 774,
+        "output": 219
+      },
+      "costUsd": 0.38985000000000003,
+      "queries": [
+        "1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[5m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[5m])), 1))"
+      ]
+    }
+  ],
+  "outcome": "killed_by_watchdog",
+  "costUsd": 1.3214,
+  "detectedAt": "2026-08-29T17:25:11.494Z",
+  "watchdog": {
+    "reason": "runaway",
+    "detail": "run cost $0.9315 exceeded the $0.50 ceiling"
+  },
+  "error": "watchdog terminated the run: runaway — run cost $0.9315 exceeded the $0.50 ceiling"
+}

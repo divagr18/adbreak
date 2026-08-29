@@ -52,6 +52,8 @@ interface Scenario {
     runbookId: string | null;
     /** Outcomes that count as correct handling. */
     outcomes: string[];
+    /** Set where no_action must mean "nothing is mapped", not "refuted". */
+    escalates?: boolean;
   };
 }
 
@@ -104,6 +106,7 @@ const SCENARIOS: Scenario[] = [
       // Deliberately unmapped: no safe automatic remedy exists.
       runbookId: null,
       outcomes: ['no_action'],
+      escalates: true,
     },
   })),
   ...Array.from({ length: 2 }, (_, i) => ({
@@ -126,7 +129,12 @@ interface Result {
   runbookCorrect: boolean;
   handledCorrectly: boolean;
   falseRemediation: boolean;
-  mttdS: number | null;
+  /**
+   * Injection to pickup, which INCLUDES the scripted 150s soak that lets the
+   * leak become real in the rate windows. Not the agent's detection latency,
+   * and must never be quoted as one.
+   */
+  injectToPickupS: number | null;
   mttrS: number | null;
   costUsd: number;
   runId: string | null;
@@ -200,10 +208,19 @@ async function runScenario(s: Scenario, index: number): Promise<Result> {
     | undefined;
   const outcome = run?.outcome ?? 'none';
   const diagnosed = run?.failureClass ?? null;
+  const planDecision = (
+    run?.steps.find((x) => x.step === 'plan')?.output as { decision?: string } | undefined
+  )?.decision;
 
   const rcaCorrect = s.expect.failureClass === null ? run === null : diagnosed === s.expect.failureClass;
   const runbookCorrect = (run?.runbookId ?? null) === s.expect.runbookId;
-  const handledCorrectly = s.expect.outcomes.includes(outcome);
+  // no_action has two very different meanings: the hypothesis was refuted, or
+  // it survived and nothing is mapped to it. A scenario that expects the agent
+  // to escalate is not satisfied by one that talked itself out of a correct
+  // diagnosis, so where the distinction matters the plan step decides it.
+  const refuted = planDecision === 'no remediation - hypothesis did not survive falsification';
+  const handledCorrectly =
+    s.expect.outcomes.includes(outcome) && !(s.expect.escalates === true && refuted);
   // The number that matters most: acting on a plant that was never broken.
   const falseRemediation = s.fault === null && outcome === 'remediated';
 
@@ -221,7 +238,7 @@ async function runScenario(s: Scenario, index: number): Promise<Result> {
     runbookCorrect,
     handledCorrectly,
     falseRemediation,
-    mttdS: run ? (Date.parse(run.detectedAt) - t0) / 1000 : null,
+    injectToPickupS: run ? (Date.parse(run.detectedAt) - t0) / 1000 : null,
     mttrS: secs(run?.detectedAt, run?.verifiedAt ?? run?.remediatedAt),
     costUsd: run?.costUsd ?? 0,
     runId: run?.runId ?? null,
@@ -254,7 +271,7 @@ function render(results: Result[]): string {
     `- **Runbook selection**: ${pct(rb, faultScenarios.length)} (${rb}/${faultScenarios.length})`,
     `- **Handled correctly**: ${pct(handled, results.length)} (${handled}/${results.length})`,
     `- **False remediations**: ${falseRemediations}`,
-    `- **Mean MTTR**: ${mean(withRuns.map((r) => r.mttrS ?? 0)).toFixed(1)}s`,
+    `- **Mean MTTR** (detection to verified recovery): ${mean(withRuns.map((r) => r.mttrS ?? 0)).toFixed(1)}s`,
     `- **Mean cost per incident**: $${mean(withRuns.map((r) => r.costUsd)).toFixed(4)}`,
     '',
     '| scenario | truth | diagnosed | stage | runbook | outcome | RCA | cost |',
