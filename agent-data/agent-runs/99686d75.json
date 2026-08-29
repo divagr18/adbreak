@@ -1,0 +1,192 @@
+{
+  "runId": "99686d75",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788022931481",
+    "channel": "sports-1",
+    "region": "eu",
+    "deviceClass": "roku",
+    "startedAt": "2026-08-29T16:32:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:02:11.522Z",
+      "durationMs": 41064,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "decide",
+          "play",
+          "beacon"
+        ],
+        "affectedDimensions": {
+          "deviceClass": "roku",
+          "cdn": null,
+          "region": "eu"
+        },
+        "reasoning": "The incident states a revenue realization rate (RRR) of 0, which is a complete failure of the SLO and warrants critical severity. The snapshot shows an impression gap of ~16.5% for Roku devices and a similar gap for other devices, indicating a systemic problem affecting a significant portion of impressions. The 'ads_pod_seconds_filled' metric at 0.875 suggests that approximately 12.5% of ad pod time is unfilled, pointing to an issue in the 'decide' stage (ad decisioning/filling). The 'impression_gap_affected' and 'impression_gap_others' directly measure the failure of impressions to be realized, implicating the 'play' stage (where ads are rendered and beacons are fired) and the 'beacon' stage (where impression signals are received and processed). The 'revenue_leak_usd' confirms ongoing financial loss. While the impression gap is not 100% in the snapshot, the initial RRR of 0 suggests a severe outage at the time of the alert trigger."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 863,
+        "output": 299
+      },
+      "costUsd": 0.0010064,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"}[5m])), 1))",
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "(sum(increase(adbreak_ads_nofill_total[5m])) or vector(0)) / clamp_min(sum(increase(adbreak_ads_request_total[5m])), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:02:52.586Z",
+      "durationMs": 10562,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "impression_gap_affected",
+          "impression_gap_others",
+          "cdn_5xx",
+          "stitch_errors",
+          "ads_latency_p99",
+          "ads_pod_seconds_filled",
+          "ads_nofill_rate",
+          "signal_chain_divergence",
+          "revenue_leak_usd"
+        ],
+        "findings": [
+          "A revenue leak of 7.43 USD is confirmed for the incident period.",
+          "The impression gap for the affected device class (16.47%) is comparable to other device classes (16.39%), suggesting a general operational gap rather than a specific issue tied to the incident's parameters.",
+          "CDN 5xx errors are zero, ruling out CDN delivery issues.",
+          "Ad stitching errors are zero, ruling out stitching as a cause.",
+          "P99 ad decisioning latency (199ms) is within acceptable limits.",
+          "Ad decisioning no-fill rate is zero, indicating ad decisioning successfully responded to all requests.",
+          "Ad pod fill rate (by seconds) is 87.5%, which is not perfect but not a complete failure.",
+          "Signal chain divergence data (cue signaling vs. manifested avails) is unavailable, so we cannot make a direct assessment of this part of the chain."
+        ],
+        "conclusion": "The ad-insertion signal chain (cue signalling, packaging, ad decisioning, stitching, and delivery) appears largely healthy based on the available metrics. Specifically, CDN, stitching, and ad decisioning show no critical errors or performance degradation that would explain a revenue loss at this stage. The impression gap is general and not specific to the incident's parameters. Given the absence of clear signal chain failures, the revenue loss likely points downstream, to billing or reconciliation systems."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 815,
+        "output": 423
+      },
+      "costUsd": 0.0013019999999999998,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:02:52.586Z",
+      "durationMs": 10562,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [],
+        "findings": [
+          "All provided 'fraction_of_impressions_lost' values are negative, ranging from -0.129 to -0.1828.",
+          "According to the definition, 'fraction_of_impressions_lost' represents the share of impressions that never reached the collector, where 0.0 is healthy and 1.0 is total loss. A negative value implies that more impressions were collected than expected or a 'gain' in impressions, rather than a loss.",
+          "Therefore, no slice is currently experiencing impression loss; all slices are exhibiting a healthy state or better (impression gain)."
+        ],
+        "conclusion": "No impression loss is detected. All device classes and CDNs show negative 'fraction_of_impressions_lost', indicating an over-collection or gain of impressions. The incident, as described by impression loss, is not attributable to any specific device class or CDN, as there is no loss."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 782,
+        "output": 226
+      },
+      "costUsd": 0.0007995999999999999,
+      "queries": [
+        "1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[5m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[5m])), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:03:03.148Z",
+      "durationMs": 34647,
+      "output": {
+        "failureClass": "UNKNOWN",
+        "stage": "beacon",
+        "cause": "A uniform ~16% of impression beacons are being lost across all device classes. The upstream ad insertion pipeline is healthy, pointing to a systemic issue at the beacon collection stage. This pattern does not match any known failure class.",
+        "confidence": 1,
+        "supportingEvidence": [
+          "The impression gap is nearly identical for the target dimension (roku: 16.47%) and all other device classes (16.39%).",
+          "Ad decisioning no-fill rate is zero, ruling out decisioning-stage loss (F04).",
+          "CDN 5xx error rate is zero, ruling out delivery-stage loss (F08).",
+          "Ad pod fill ratio by seconds is normal (0.875), ruling out duration underfill (F09).",
+          "The entire upstream pipeline (decisioning, stitching, delivery) shows healthy metrics."
+        ],
+        "scope": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": null
+        },
+        "predictedSignature": "A consistent ~15-20% impression gap will be observed across all device classes, CDNs, and regions. All other pipeline metrics, including CDN errors, no-fill rate, and ad-server latency, will remain healthy."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2359,
+        "output": 310
+      },
+      "costUsd": 0.00604875
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-29T17:03:37.795Z",
+      "durationMs": 19718,
+      "output": {
+        "survived": false,
+        "testsAttempted": [
+          "F07"
+        ],
+        "contradictions": [
+          "The core premise of the 'UNKNOWN' hypothesis is a 'uniform ~16% of impression beacons are being lost across all device classes'. This is directly contradicted by the probe `other_device_classes_gap: 0`, which indicates that device classes other than the target dimension have zero impression loss. This shows the failure is isolated, not uniform."
+        ],
+        "verdict": "The hypothesis is refuted. The claim of a uniform, systemic loss is falsified by probe data showing the loss is isolated to a single device class. This isolated loss pattern, combined with healthy upstream metrics (no-fill, CDN errors, etc.), is the classic signature of F07 (beacon blackhole at the CDN edge for one device class)."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1281,
+        "output": 192
+      },
+      "costUsd": 0.00352125,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}[5m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}[5m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-29T17:03:57.513Z",
+      "durationMs": 0,
+      "output": {
+        "decision": "no remediation - hypothesis did not survive falsification",
+        "contradictions": [
+          "The core premise of the 'UNKNOWN' hypothesis is a 'uniform ~16% of impression beacons are being lost across all device classes'. This is directly contradicted by the probe `other_device_classes_gap: 0`, which indicates that device classes other than the target dimension have zero impression loss. This shows the failure is isolated, not uniform."
+        ]
+      }
+    }
+  ],
+  "outcome": "no_action",
+  "costUsd": 0.012678,
+  "detectedAt": "2026-08-29T17:02:11.522Z",
+  "failureClass": "UNKNOWN"
+}

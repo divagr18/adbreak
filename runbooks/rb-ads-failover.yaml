@@ -9,8 +9,11 @@ blast_radius: T2
 
 preconditions:
   - id: fill_collapsed
+    # No-fill RATE, not the pod-seconds ratio. The latter reads 0.875 on a
+    # perfectly healthy plant (a 28s pod in a 32s avail), so thresholding it
+    # would have fired on normal operation.
     description: the ad server has stopped returning usable pods
-    expr: 'ads_fill_ratio < 0.5'
+    expr: 'ads_nofill_rate > 0.5'
     window: 3m
   - id: fallback_available
     description: there is a cached pod to serve, or this remediation would do nothing
@@ -40,7 +43,10 @@ actions:
     body: { mode: cached_pod }
 
 verification:
-  expr: 'slate_seconds_rate < 1'
+  # Measured as the ratio of impression counter DELTAS taken from the moment
+  # the fix lands. A sliding window still contains the incident and so cannot
+  # show recovery until the faulty break ages out of it.
+  expr: 'impressions_fired / impressions_expected, delta since remediation, >= 0.95'
   window: 2m
   timeout_s: 240
 

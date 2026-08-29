@@ -34,7 +34,9 @@ actions:
     body: { device_class: $device, mode: server_side }
 
 verification:
-  expr: 'impression_gap{device_class="$device"} < 0.05'
+  # Ratio of impression counter DELTAS since the fix landed, not a sliding
+  # window - a window wide enough to be stable still contains the incident.
+  expr: 'impressions_fired / impressions_expected, delta since remediation, >= 0.95'
   window: 2m
   # One break cadence plus scrape lag: recovery cannot be observed until the
   # next break has actually run and its beacons have been scraped.
