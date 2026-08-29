@@ -8,6 +8,8 @@ import { join } from 'node:path';
 import { createService } from '@adbreak/shared';
 import { Incident } from './schemas.js';
 import { runIncident, type AgentRun } from './run.js';
+import { scalar } from './tools/grafana.js';
+import { impressionGap } from './tools/metrics.js';
 import { renderRunList, renderRun } from './trace-ui.js';
 
 const svc = createService('agent');
@@ -110,6 +112,21 @@ async function handle(instance: AlertInstance): Promise<void> {
   const labels = instance.labels ?? {};
   const key = `${labels.device_class ?? '?'}|${labels.region ?? '?'}`;
   if (inFlight.has(key)) return;
+
+  // The SLO alert is computed over 15 minutes, so it keeps firing long after a
+  // fault is fixed. Acting on a lagging alert would make the agent remediate
+  // the same incident over and over. Confirm the leak is still happening right
+  // now, on a short window, before doing anything about it.
+  const deviceClass = labels.device_class ?? 'unknown';
+  const liveGap = await scalar(impressionGap(deviceClass, '3m'));
+  if (liveGap === null || liveGap < 0.2) {
+    svc.log.info('alert still firing but the leak has stopped, standing down', {
+      device_class: deviceClass,
+      live_gap: liveGap,
+    });
+    return;
+  }
+
   inFlight.add(key);
 
   const firedAt = instance.activeAt ? Date.parse(instance.activeAt) : Date.now();
