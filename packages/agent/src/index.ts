@@ -153,7 +153,14 @@ async function handle(instance: AlertInstance): Promise<void> {
   // was riding on the noisiest measurement in the system - and a real F07 was
   // waved through as "the leak has stopped".
   const liveGap = await scalar(impressionGap(deviceClass, '4m'));
-  if (liveGap === null || liveGap < 0.2) {
+  // 0.1, not 0.2. This gap is measured across a whole device class, but a fault
+  // can be scoped more narrowly than that: F08 hits one CDN, so only the third
+  // of web sessions on it lose their segments and a genuine outage reads 0.167
+  // device-wide. At 0.2 the agent declined to engage on a real one, logging
+  // "the leak has stopped" while revenue was being lost. The healthy baseline
+  // over this window measures 0.009, so 0.1 still sits an order of magnitude
+  // above the noise.
+  if (liveGap === null || liveGap < 0.1) {
     svc.log.info('alert still firing but the leak has stopped, standing down', {
       device_class: deviceClass,
       live_gap: liveGap,
