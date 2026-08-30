@@ -1,0 +1,193 @@
+{
+  "runId": "28350be0",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788083046110",
+    "channel": "sports-1",
+    "region": "eu",
+    "deviceClass": "android",
+    "startedAt": "2026-08-30T09:30:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-30T09:44:06.328Z",
+      "durationMs": 27091,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "beacon",
+          "play",
+          "deliver"
+        ],
+        "affectedDimensions": {
+          "deviceClass": "android",
+          "cdn": null,
+          "region": "eu"
+        },
+        "reasoning": "The Revenue Realization Ratio (RRR) is 0, indicating a complete loss of revenue, which is a critical issue. This is further supported by the `revenue_leak_usd` being non-zero. Crucially, `impression_gap_affected` is 0 for android devices, implying that the expected number of impression beacons are being fired successfully. This contradiction (beacons fired, but no revenue) points to an issue where beacons are generated and sent, but are either malformed, sent to an incorrect destination, or are not being correctly processed by the downstream system responsible for revenue attribution. Therefore, the `beacon` stage is the primary suspect. Secondary suspects include the `play` stage (if beacons are fired without actual ad rendering) or the `deliver` stage (if malformed creatives lead to 'empty' but beaconing ads). The affected dimensions are `deviceClass=android` and `region=eu` as per the incident context. No CDN issues are observed."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 1008,
+        "output": 280
+      },
+      "costUsd": 0.0010023999999999999,
+      "queries": [
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class=\"android\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class=\"android\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class=\"android\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class=\"android\"} offset 4m) or vector(0)), 1))",
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"android\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"android\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"android\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"android\"} offset 4m) or vector(0)), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "((sum(adbreak_ads_nofill_total) or vector(0)) - (sum(adbreak_ads_nofill_total offset 5m) or vector(0))) / clamp_min(sum(adbreak_ads_request_total) - sum(adbreak_ads_request_total offset 5m), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-30T09:44:33.419Z",
+      "durationMs": 7842,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "impression_gap_affected",
+          "impression_gap_others",
+          "cdn_5xx",
+          "stitch_errors",
+          "ads_latency_p99",
+          "ads_pod_seconds_filled",
+          "ads_nofill_rate",
+          "signal_chain_divergence",
+          "revenue_leak_usd"
+        ],
+        "findings": [
+          "There is a revenue leak of $18.55, indicating a discrepancy between expected and realized revenue.",
+          "The impression gap for affected devices is 0, meaning ads are being delivered and tracked successfully.",
+          "The impression gap for other devices is 0, consistent with overall ad delivery health.",
+          "There are no CDN 5xx errors, indicating healthy ad asset delivery.",
+          "There are no ad stitching errors, suggesting ad pods are being correctly inserted into the stream.",
+          "The 99th percentile ad response latency is 0.199 seconds, which is a healthy performance for ad decisioning.",
+          "Approximately 87.5% of ad pod seconds are filled, indicating a good fill rate from ad decisioning.",
+          "The ad no-fill rate is 0, meaning all ad requests are successfully returning ads.",
+          "The signal chain divergence metric is null, providing no direct insight, but other metrics suggest no major issues upstream."
+        ],
+        "conclusion": "The data shows that all components of the ad-insertion signal chain, including cue signalling (implicitly), ad decisioning, packaging, stitching, and delivery, are healthy and performing as expected. Specifically, ads are being requested, filled, stitched, delivered, and impressions are being counted without errors or significant latency. This rules out any issues within the ad-insertion signal chain as the cause of the revenue loss. The revenue incident with a healthy signal chain points downstream to billing or reconciliation systems."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 960,
+        "output": 431
+      },
+      "costUsd": 0.0013655000000000002,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-30T09:44:33.419Z",
+      "durationMs": 7842,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [],
+        "findings": [
+          "No slices are currently losing impressions. All reported 'fraction_of_impressions_lost' values are 0.0, indicating healthy performance across all device classes and CDNs.",
+          "All combinations of device class (android, firetv, ios, roku, smarttv, web) and CDN (cdn-east, cdn-west) are healthy."
+        ],
+        "conclusion": "Neither a specific device class nor a CDN is at fault. The data indicates no impression loss across any combination of device class and CDN. The system appears healthy with respect to impression collection in these dimensions."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 724,
+        "output": 153
+      },
+      "costUsd": 0.0005997,
+      "queries": [
+        "1 - ((sum by (device_class, cdn) (adbreak_beacon_fired_total{event=\"impression\"}) - sum by (device_class, cdn) (adbreak_beacon_fired_total{event=\"impression\"} offset 4m)) / clamp_min(sum by (device_class, cdn) (adbreak_beacon_expected_total{event=\"impression\"}) - sum by (device_class, cdn) (adbreak_beacon_expected_total{event=\"impression\"} offset 4m), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-30T09:44:41.261Z",
+      "durationMs": 16492,
+      "output": {
+        "failureClass": "UNKNOWN",
+        "stage": "unknown",
+        "cause": "All ad-insertion and delivery metrics are healthy, including a value of 0.0 for fraction_of_impressions_lost. The reported revenue leak of $18.55 indicates a discrepancy in a downstream system, such as billing or financial reconciliation, which is outside the scope of the ad-insertion pipeline.",
+        "confidence": 1,
+        "supportingEvidence": [
+          "impression_gap_affected is 0",
+          "impression_gap_others is 0",
+          "All gap_by_device_and_cdn metrics are 0",
+          "ads_nofill_rate is 0",
+          "cdn_5xx is 0",
+          "stitch_errors is 0"
+        ],
+        "scope": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": null
+        },
+        "predictedSignature": "All operational metrics, including fraction_of_impressions_lost, are healthy, but a revenue leak is reported. This indicates a fault outside the ad-insertion pipeline, likely in billing or reconciliation."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2381,
+        "output": 266
+      },
+      "costUsd": 0.00563625
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-30T09:44:57.753Z",
+      "durationMs": 12623,
+      "output": {
+        "survived": false,
+        "testsAttempted": [
+          "F09"
+        ],
+        "contradictions": [
+          "The hypothesis claims all ad-insertion metrics are healthy, but the probe `ads_pod_seconds_filled` is 0.875. This indicates that 12.5% of the available ad time is not being filled with ads, which directly explains a revenue leak and contradicts the assertion that the problem is downstream of the ad-insertion pipeline."
+        ],
+        "verdict": "The hypothesis is refuted. The probe 'ads_pod_seconds_filled' being significantly less than 1.0 is the defining signal for failure class F09 (ad pod duration underfill). This is an internal ad-pipeline issue, not a downstream billing problem."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1183,
+        "output": 179
+      },
+      "costUsd": 0.00326875,
+      "queries": [
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"android\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"android\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"android\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"android\"} offset 4m) or vector(0)), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-30T09:45:10.376Z",
+      "durationMs": 0,
+      "output": {
+        "decision": "no remediation - hypothesis did not survive falsification",
+        "contradictions": [
+          "The hypothesis claims all ad-insertion metrics are healthy, but the probe `ads_pod_seconds_filled` is 0.875. This indicates that 12.5% of the available ad time is not being filled with ads, which directly explains a revenue leak and contradicts the assertion that the problem is downstream of the ad-insertion pipeline."
+        ]
+      }
+    }
+  ],
+  "outcome": "no_action",
+  "costUsd": 0.0118726,
+  "detectedAt": "2026-08-30T09:44:06.328Z",
+  "failureClass": "UNKNOWN"
+}

@@ -137,6 +137,11 @@ async function settle(maxMs = 12 * 60_000): Promise<void> {
  * way, and the verdict looked like a precondition bug rather than a harness one.
  */
 async function triggerAndWait(device: string, maxMs = 8 * 60_000): Promise<AgentRun | null> {
+  // Clear the cooldown HERE, not in reset(). settle() sits for minutes between
+  // the two, and the agent's own poller can remediate during that window and
+  // re-arm the suppression - which silently swallowed the alert and reported
+  // "no run" for a scenario that had never been triggered at all.
+  await fetch(`${AGENT}/admin/cooldown`, { method: 'DELETE' }).catch(() => {});
   const t0 = Date.now();
   await post(`${AGENT}/alert`, {
     alerts: [{ labels: { device_class: device, region: 'us-east', channel: 'sports-1' } }],
@@ -152,6 +157,7 @@ async function triggerAndWait(device: string, maxMs = 8 * 60_000): Promise<Agent
       .sort((a, b) => Date.parse(a.detectedAt) - Date.parse(b.detectedAt));
     if (mine.length > 0) return mine[0];
   }
+  console.log('  WARNING: the alert produced no run at all within the wait window');
   return null;
 }
 

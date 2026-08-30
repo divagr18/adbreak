@@ -1,0 +1,195 @@
+{
+  "runId": "fbf826e0",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788082453407",
+    "channel": "sports-1",
+    "region": "eu",
+    "deviceClass": "smarttv",
+    "startedAt": "2026-08-30T09:30:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-30T09:34:13.626Z",
+      "durationMs": 18033,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "deliver",
+          "play",
+          "condition",
+          "package"
+        ],
+        "affectedDimensions": {
+          "deviceClass": "smarttv",
+          "cdn": "unknown",
+          "region": "eu"
+        },
+        "reasoning": "Critical revenue loss (RRR is 0) specifically for smartTV devices in the EU region. A very high number of CDN 5xx errors directly implicates the 'deliver' stage. The 'impression_gap_affected' for smartTVs (45%) is significantly higher than for other device classes (21%), indicating a 'play' stage issue specific to smartTVs, or problems in 'condition' or 'package' stages leading to delivery failures for this device class."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 1069,
+        "output": 185
+      },
+      "costUsd": 0.0007832,
+      "queries": [
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class=\"smarttv\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class=\"smarttv\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class=\"smarttv\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class=\"smarttv\"} offset 4m) or vector(0)), 1))",
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"smarttv\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"smarttv\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"smarttv\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"smarttv\"} offset 4m) or vector(0)), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "((sum(adbreak_ads_nofill_total) or vector(0)) - (sum(adbreak_ads_nofill_total offset 5m) or vector(0))) / clamp_min(sum(adbreak_ads_request_total) - sum(adbreak_ads_request_total offset 5m), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-30T09:34:31.659Z",
+      "durationMs": 19355,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "impression_gap_affected",
+          "impression_gap_others",
+          "cdn_5xx",
+          "stitch_errors",
+          "ads_latency_p99",
+          "ads_pod_seconds_filled",
+          "ads_nofill_rate",
+          "signal_chain_divergence",
+          "revenue_leak_usd"
+        ],
+        "findings": [
+          "A significant impression gap of 45.45% is observed for the affected 'smarttv' device class, indicating ads are not reaching viewers.",
+          "A very high number of CDN 5xx errors (6914.12) are occurring, pointing to a severe delivery issue.",
+          "Ad decisioning metrics are healthy: P99 ad latency is low at 199ms, ad pods are 87.5% filled, and there are no ad no-fills. This means ad requests are being processed successfully.",
+          "There are no reported stitching errors.",
+          "The incident is generating a revenue leak of 24.26 USD."
+        ],
+        "conclusion": "The data shows that ads are successfully being decided and filled by the ad decisioning system, and there are no stitching errors. However, a high number of CDN 5xx errors indicates that the ads are failing to be delivered to the end-users, especially for 'smarttv' devices. This delivery failure is directly causing the observed impression gap and subsequent revenue loss. The issue points to a problem in the ad delivery stage, specifically related to CDN performance. Ad decisioning and stitching are ruled out as the root cause."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 1021,
+        "output": 375
+      },
+      "costUsd": 0.0012438,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-30T09:34:31.659Z",
+      "durationMs": 19355,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [
+          "Analyze 'gap_by_device_and_cdn' for 'fraction_of_impressions_lost' values.",
+          "Identify all slices with a 'fraction_of_impressions_lost' greater than 0.0 to determine losing slices.",
+          "Identify all slices with a 'fraction_of_impressions_lost' less than or equal to 0.0 to determine healthy slices."
+        ],
+        "findings": [
+          "All reported 'fraction_of_impressions_lost' values across all device classes and CDNs are negative. According to the definition ('0.0 means healthy, 1.0 means total loss, A HIGH value is BAD'), a negative value indicates a state better than healthy, implying an over-delivery or over-reporting of impressions rather than a loss.",
+          "No slice is identified as 'losing impressions' because no 'fraction_of_impressions_lost' value is greater than 0.0.",
+          "All slices are considered healthy or 'better than healthy' as their 'fraction_of_impressions_lost' is less than or equal to 0.0. This includes: firetv/cdn-east (-0.3913), smarttv/cdn-west (-0.3939), web/cdn-west (-0.3939), android/cdn-east (-0.3333), ios/cdn-east (-0.3333), roku/cdn-east (-0.4203), smarttv/cdn-east (-0.3939), web/cdn-east (-0.4242), android/cdn-west (-0.4545), firetv/cdn-west (-0.3939), ios/cdn-west (-0.3939), and roku/cdn-west (-0.3333)."
+        ],
+        "conclusion": "Neither device class nor CDN is at fault for impression loss. The data consistently shows negative 'fraction_of_impressions_lost' values across all dimensions, indicating no impression loss. Instead, there appears to be an over-delivery or over-reporting of impressions. The incident's Revenue Reduction Rate (RRR) of 0 further supports the absence of actual impression loss."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 785,
+        "output": 516
+      },
+      "costUsd": 0.0015255,
+      "queries": [
+        "1 - ((sum by (device_class, cdn) (adbreak_beacon_fired_total{event=\"impression\"}) - sum by (device_class, cdn) (adbreak_beacon_fired_total{event=\"impression\"} offset 4m)) / clamp_min(sum by (device_class, cdn) (adbreak_beacon_expected_total{event=\"impression\"}) - sum by (device_class, cdn) (adbreak_beacon_expected_total{event=\"impression\"} offset 4m), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-30T09:34:51.014Z",
+      "durationMs": 26531,
+      "output": {
+        "failureClass": "F08",
+        "stage": "deliver",
+        "cause": "A high rate of HTTP 5xx errors from the Content Delivery Network (CDN) is preventing ad segments from being delivered to end-user devices, leading to a failure to play ads.",
+        "confidence": 0.95,
+        "supportingEvidence": [
+          "A very high rate of CDN 5xx errors (6914.12) is observed.",
+          "A significant impression gap of 45.5% is present on the 'smarttv' device class.",
+          "Upstream systems are healthy: ads_nofill_rate is 0, ads_pod_seconds_filled is normal at 0.875, and stitch_errors are 0."
+        ],
+        "scope": {
+          "deviceClass": "smarttv",
+          "cdn": null,
+          "region": "eu"
+        },
+        "predictedSignature": "High impression loss correlated with a spike in CDN 5xx errors, with healthy upstream ad decisioning and stitching metrics."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2809,
+        "output": 246
+      },
+      "costUsd": 0.00597125
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-30T09:35:17.545Z",
+      "durationMs": 50669,
+      "output": {
+        "survived": false,
+        "testsAttempted": [
+          "F02",
+          "F04",
+          "F07",
+          "F09"
+        ],
+        "contradictions": [
+          "The hypothesis F08 (regional CDN 5xx on segment delivery) implies a broad infrastructure problem affecting a specific region. Such a failure would impact all device classes attempting to fetch content from the faulty CDN nodes in that region. However, the probe 'other_device_classes_gap' has a value of 0, indicating the impression loss is exclusively confined to the 'smarttv' device class. This contradicts the expected signature of a regional CDN failure, which should not be so perfectly selective."
+        ],
+        "verdict": "The hypothesis is refuted. The observed failure pattern, with the impression gap being strictly isolated to a single device class, is inconsistent with a regional CDN segment delivery failure (F08). The evidence points more strongly towards a class-specific issue, such as F07 (beacon blackhole), rather than a general content delivery problem."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1489,
+        "output": 238
+      },
+      "costUsd": 0.00424125,
+      "queries": [
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"smarttv\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"smarttv\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"smarttv\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"smarttv\"} offset 4m) or vector(0)), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-30T09:36:08.214Z",
+      "durationMs": 0,
+      "output": {
+        "decision": "no remediation - hypothesis did not survive falsification",
+        "contradictions": [
+          "The hypothesis F08 (regional CDN 5xx on segment delivery) implies a broad infrastructure problem affecting a specific region. Such a failure would impact all device classes attempting to fetch content from the faulty CDN nodes in that region. However, the probe 'other_device_classes_gap' has a value of 0, indicating the impression loss is exclusively confined to the 'smarttv' device class. This contradicts the expected signature of a regional CDN failure, which should not be so perfectly selective."
+        ]
+      }
+    }
+  ],
+  "outcome": "no_action",
+  "costUsd": 0.013765000000000001,
+  "detectedAt": "2026-08-30T09:34:13.626Z",
+  "failureClass": "F08"
+}

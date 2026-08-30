@@ -1,0 +1,274 @@
+{
+  "runId": "181774a0",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788031388322",
+    "channel": "sports-1",
+    "region": "eu",
+    "deviceClass": "android",
+    "startedAt": "2026-08-29T19:22:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-29T19:23:08.451Z",
+      "durationMs": 16235,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "decide",
+          "package",
+          "signal"
+        ],
+        "affectedDimensions": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": "eu"
+        },
+        "reasoning": "The revenue realization rate (RRR) is 0, indicating a complete loss of revenue. Both the 'impression_gap_affected' (for Android) and 'impression_gap_others' metrics are 1, signifying a 100% impression gap across all device classes. This is further supported by an 'ads_nofill_rate' of 1 (100% no-fill) and 'ads_pod_seconds_filled' being near zero, which means no ads are being delivered. This strongly implicates the 'decide' stage (ad decisioning failing to provide ads) and 'package' stage (ads not being packaged). The 'signal' stage is also a possible suspect if ad requests are not being generated or are malformed, leading to the no-fill. There are no observed errors in 'stitch' or 'cdn' stages. While the incident details specify 'android' and 'eu', the metrics indicate a broader impact across all device classes, suggesting a systemic issue in ad decisioning/supply. The region 'eu' is explicitly mentioned in the incident and cannot be ruled out as an affected dimension."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 1010,
+        "output": 314
+      },
+      "costUsd": 0.001088,
+      "queries": [
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class=\"android\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class=\"android\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class=\"android\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class=\"android\"} offset 4m) or vector(0)), 1))",
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"android\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"android\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"android\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"android\"} offset 4m) or vector(0)), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "((sum(adbreak_ads_nofill_total) or vector(0)) - (sum(adbreak_ads_nofill_total offset 5m) or vector(0))) / clamp_min(sum(adbreak_ads_request_total) - sum(adbreak_ads_request_total offset 5m), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-29T19:23:24.686Z",
+      "durationMs": 10193,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "impression_gap_affected",
+          "impression_gap_others",
+          "cdn_5xx",
+          "stitch_errors",
+          "ads_latency_p99",
+          "ads_pod_seconds_filled",
+          "ads_nofill_rate",
+          "signal_chain_divergence",
+          "revenue_leak_usd"
+        ],
+        "findings": [
+          "A complete impression gap was observed across all device classes, with 'impression_gap_affected' and 'impression_gap_others' both at 1, indicating no impressions were fired.",
+          "The ad decisioning system experienced a 100% no-fill rate, with 'ads_nofill_rate' at 1 and 'ads_pod_seconds_filled' near 0, meaning no ads were returned to fill any ad pods.",
+          "CDN 5xx errors ('cdn_5xx' is 0) and stitching errors ('stitch_errors' is 0) are absent, ruling out issues in ad delivery or video stitching.",
+          "Ad decisioning latency was healthy ('ads_latency_p99' at 0.199s), ruling out slow ad responses as a cause for the no-fills.",
+          "The 'signal_chain_divergence' metric is null, providing no direct insight into signaling discrepancies, but the severe no-fill rate points to upstream issues."
+        ],
+        "conclusion": "The data clearly shows a critical failure within the ad-insertion signal chain, specifically at or before the Ad Decisioning System, which is consistently returning no ads. This high no-fill rate is the direct cause of the revenue loss and complete impression gap. The incident rules out issues related to ad delivery (CDN, stitching) and the performance/responsiveness of the ad decisioning system itself. Investigation should focus on ad decisioning logic, ad inventory, or upstream cue signaling and packaging."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 962,
+        "output": 438
+      },
+      "costUsd": 0.0013836,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-29T19:23:24.686Z",
+      "durationMs": 10193,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [
+          "Look up fraction_of_impressions_lost by device_class and cdn."
+        ],
+        "findings": [
+          "The slice device_class=\"android\" and cdn=\"cdn-east\" is losing 100.00% of impressions (BAD).",
+          "The slice device_class=\"firetv\" and cdn=\"cdn-east\" is losing 100.00% of impressions (BAD).",
+          "The slice device_class=\"ios\" and cdn=\"cdn-east\" is losing 100.00% of impressions (BAD).",
+          "The slice device_class=\"roku\" and cdn=\"cdn-east\" is losing 100.00% of impressions (BAD).",
+          "The slice device_class=\"smarttv\" and cdn=\"cdn-east\" is losing 100.00% of impressions (BAD).",
+          "The slice device_class=\"web\" and cdn=\"cdn-east\" is losing 100.00% of impressions (BAD).",
+          "The slice device_class=\"android\" and cdn=\"cdn-west\" is losing 100.00% of impressions (BAD).",
+          "The slice device_class=\"firetv\" and cdn=\"cdn-west\" is losing 100.00% of impressions (BAD).",
+          "The slice device_class=\"ios\" and cdn=\"cdn-west\" is losing 100.00% of impressions (BAD).",
+          "The slice device_class=\"roku\" and cdn=\"cdn-west\" is losing 100.00% of impressions (BAD).",
+          "The slice device_class=\"smarttv\" and cdn=\"cdn-west\" is losing 100.00% of impressions (BAD).",
+          "The slice device_class=\"web\" and cdn=\"cdn-west\" is losing 100.00% of impressions (BAD).",
+          "There are no healthy slices in this breakdown."
+        ],
+        "conclusion": "The fault is affecting all device classes and all CDNs, indicating a broad issue impacting both dimensions comprehensively."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 724,
+        "output": 516
+      },
+      "costUsd": 0.0015072,
+      "queries": [
+        "1 - ((sum by (device_class, cdn) (adbreak_beacon_fired_total{event=\"impression\"}) - sum by (device_class, cdn) (adbreak_beacon_fired_total{event=\"impression\"} offset 4m)) / clamp_min(sum by (device_class, cdn) (adbreak_beacon_expected_total{event=\"impression\"}) - sum by (device_class, cdn) (adbreak_beacon_expected_total{event=\"impression\"} offset 4m), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-29T19:23:34.879Z",
+      "durationMs": 19633,
+      "output": {
+        "failureClass": "F04",
+        "stage": "decide",
+        "cause": "The ad decisioning system is returning empty VAST responses for all ad requests, leading to a 100% no-fill rate. This is the direct cause of the total impression loss across all platforms.",
+        "confidence": 1,
+        "supportingEvidence": [
+          "ads_nofill_rate is 1, indicating 100% of ad requests were answered with an empty VAST.",
+          "ads_pod_seconds_filled is approximately 0, confirming no ad pods were filled.",
+          "impression_gap_affected and impression_gap_others are both 1, showing a total impression loss across all device classes.",
+          "Ad delivery and stitching metrics (cdn_5xx, stitch_errors) are nominal, ruling out downstream issues.",
+          "Ad server latency (ads_latency_p99) is healthy, ruling out performance issues with the decisioning system."
+        ],
+        "scope": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": null
+        },
+        "predictedSignature": "Global impression loss caused by a 100% no-fill rate from the ad decisioning system, with all other pipeline metrics appearing healthy."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2753,
+        "output": 292
+      },
+      "costUsd": 0.00636125
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-29T19:23:54.512Z",
+      "durationMs": 20899,
+      "output": {
+        "survived": true,
+        "testsAttempted": [
+          "F01",
+          "F02",
+          "F08",
+          "F07",
+          "F09"
+        ],
+        "contradictions": [],
+        "verdict": "The hypothesis could not be refuted. All available probe data is consistent with a global F04 failure. Competing hypotheses are ruled out: F01/F02 are contradicted by ads_nofill_rate=1, which proves ad requests were sent. F08 is contradicted by cdn_5xx=0. F07 and F09 are contradicted by ads_pod_seconds_filled being effectively zero, which indicates a complete failure to return any ads, not a partial fill or a beaconing issue."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1582,
+        "output": 180
+      },
+      "costUsd": 0.0037775000000000005,
+      "queries": [
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"android\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"android\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"android\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"android\"} offset 4m) or vector(0)), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-29T19:24:15.411Z",
+      "durationMs": 221,
+      "output": {
+        "runbookId": "rb-ads-failover",
+        "version": 1,
+        "title": "Serve cached backup inventory when the ad server stops filling",
+        "params": {
+          "device": "android",
+          "region": "eu"
+        },
+        "blastRadiusTier": "T2",
+        "verdict": {
+          "verdict": "APPROVE",
+          "reason": "region-wide or device-class-global change needs a human"
+        },
+        "preconditions": [
+          {
+            "id": "fill_collapsed",
+            "expr": "ads_nofill_rate > 0.5",
+            "promql": "((sum(adbreak_ads_nofill_total) or vector(0)) - (sum(adbreak_ads_nofill_total offset 5m) or vector(0))) / clamp_min(sum(adbreak_ads_request_total) - sum(adbreak_ads_request_total offset 5m), 1)",
+            "value": 0.6666666666666666,
+            "met": true
+          },
+          {
+            "id": "fallback_available",
+            "expr": "ads_fallback_ready == 1",
+            "promql": "max(adbreak_ssai_ads_fallback_ready) or vector(0)",
+            "value": 1,
+            "met": true
+          },
+          {
+            "id": "delivery_healthy",
+            "expr": "cdn_5xx == 0",
+            "promql": "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+            "value": 0,
+            "met": true
+          }
+        ],
+        "predictedImpact": {
+          "rrr_delta": 0.8,
+          "description": "Breaks that would have been slated are filled from the last pod that did fill, with tracking retargeted to the current avail so the impressions are genuinely billable.\n",
+          "risk": "Cached creatives may be out of flight or mistargeted for the current audience. Acceptable briefly against earning nothing; a human decides, which is why this is T2.\n"
+        },
+        "actions": [
+          {
+            "type": "config_patch",
+            "target": "ssai",
+            "method": "POST",
+            "path": "/admin/ads-fallback",
+            "body": {
+              "mode": "cached_pod"
+            }
+          }
+        ],
+        "rollback": [
+          {
+            "type": "config_patch",
+            "target": "ssai",
+            "method": "POST",
+            "path": "/admin/ads-fallback",
+            "body": {
+              "mode": "none"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "step": "act",
+      "kind": "code",
+      "startedAt": "2026-08-29T19:24:15.683Z",
+      "durationMs": 0,
+      "output": {
+        "executed": false,
+        "reason": "region-wide or device-class-global change needs a human"
+      }
+    }
+  ],
+  "outcome": "awaiting_approval",
+  "costUsd": 0.01411755,
+  "detectedAt": "2026-08-29T19:23:08.451Z",
+  "failureClass": "F04",
+  "runbookId": "rb-ads-failover",
+  "tier": "T2",
+  "verdict": "APPROVE"
+}
