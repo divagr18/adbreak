@@ -334,45 +334,78 @@ svc.app.get('/runs/:id', (req, res) => {
  * operator action on a specific incident, not a chaos/debug control, and the
  * demo shows a human clicking it on the run's own trace page.
  */
-svc.app.post('/runs/:id/approve', async (req, res) => {
+/**
+ * Approving is acknowledged immediately and carried out in the background.
+ *
+ * Executing a runbook and then proving it worked takes several minutes: one
+ * break cadence for the in-flight break to finish, then whole breaks to measure
+ * against. Holding the HTTP request open for that long hangs whatever sent it -
+ * a browser, or a client that gives up at its own timeout and reports a failure
+ * that never happened. Callers watch /runs/:id for the outcome instead.
+ */
+const approving = new Set<string>();
+
+async function runApproval(run: AgentRun, approvedBy: string): Promise<void> {
+  approving.add(run.runId);
+  try {
+    const result = await approveRun(run, approvedBy);
+    saveRun(result.run);
+    remediationTotal.inc({
+      runbook: result.run.runbookId ?? 'none',
+      tier: result.run.tier ?? 'none',
+      outcome: result.run.outcome === 'remediated' ? 'approved_remediated' : result.run.outcome,
+    });
+    if (result.run.verifiedAt) {
+      mttr.observe(
+        {},
+        (Date.parse(result.run.verifiedAt) - Date.parse(result.run.detectedAt)) / 1000,
+      );
+    }
+    svc.log.info('approval complete', {
+      run_id: result.run.runId,
+      outcome: result.run.outcome,
+      reason: result.reason,
+    });
+  } catch (err) {
+    svc.log.error('approval failed', { run_id: run.runId, err: String(err) });
+  } finally {
+    approving.delete(run.runId);
+  }
+}
+
+svc.app.post('/runs/:id/approve', (req, res) => {
   const run = listRuns().find((r) => r.runId === req.params.id);
   if (!run) return res.status(404).json({ error: 'no such run' });
+  if (run.outcome !== 'awaiting_approval') {
+    return res.status(409).json({ error: `run is ${run.outcome}, not awaiting_approval` });
+  }
+  if (approving.has(run.runId)) {
+    return res.status(409).json({ error: 'this run is already being approved' });
+  }
 
   const approvedBy = String(
     (req.body as { approved_by?: string } | undefined)?.approved_by ?? 'operator',
   );
   svc.log.info('approval received', { run_id: run.runId, approved_by: approvedBy });
+  void runApproval(run, approvedBy);
 
-  const result = await approveRun(run, approvedBy);
-  saveRun(result.run);
-  remediationTotal.inc({
-    runbook: result.run.runbookId ?? 'none',
-    tier: result.run.tier ?? 'none',
-    outcome: result.run.outcome === 'remediated' ? 'approved_remediated' : result.run.outcome,
-  });
-  if (result.run.verifiedAt) {
-    mttr.observe({}, (Date.parse(result.run.verifiedAt) - Date.parse(result.run.detectedAt)) / 1000);
-  }
-  // A refusal on stale preconditions is a correct outcome, not a server error.
-  res.status(result.ok ? 200 : 409).json({
-    ok: result.ok,
-    reason: result.reason,
-    outcome: result.run.outcome,
-    recovered: result.run.recovered ?? false,
+  res.status(202).json({
+    accepted: true,
+    runId: run.runId,
+    approvedBy,
+    note: 'executing and verifying in the background; watch /runs/:id for the outcome',
   });
 });
 
 /** The form target behind the Approve button on a run's trace page. */
-svc.app.post('/trace/:id/approve', async (req, res) => {
+svc.app.post('/trace/:id/approve', (req, res) => {
   const run = listRuns().find((r) => r.runId === req.params.id);
   if (!run) return res.status(404).type('html').send('<p>no such run</p>');
-  const result = await approveRun(run, 'operator (trace UI)');
-  saveRun(result.run);
-  remediationTotal.inc({
-    runbook: result.run.runbookId ?? 'none',
-    tier: result.run.tier ?? 'none',
-    outcome: result.run.outcome === 'remediated' ? 'approved_remediated' : result.run.outcome,
-  });
+  if (run.outcome === 'awaiting_approval' && !approving.has(run.runId)) {
+    void runApproval(run, 'operator (trace UI)');
+  }
+  // Straight back to the run, which now shows the approval in progress. The
+  // work takes minutes; the click should not.
   res.redirect(`/trace/${run.runId}`);
 });
 

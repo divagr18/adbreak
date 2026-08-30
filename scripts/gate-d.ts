@@ -270,24 +270,46 @@ async function approvalPath(): Promise<void> {
 
   console.log('\n  approving the held plan as a human would...');
   const res = await post(`${AGENT}/runs/${run.runId}/approve`, { approved_by: 'gate-d' });
-  const body = (await res.json()) as {
-    ok: boolean;
-    reason: string;
-    outcome: string;
-    recovered: boolean;
-  };
-  const after = await json<AgentRun[]>(`${AGENT}/runs`).then((rs) =>
-    rs.find((r) => r.runId === run.runId),
-  );
+  const body = (await res.json()) as { accepted?: boolean; error?: string };
+  if (!body.accepted) {
+    check(
+      'approving the held plan executes it and recovery is verified with the fault still injected',
+      false,
+      `approval was refused: ${body.error ?? 'unknown'}`,
+    );
+    await fetch(`${CHAOS}/inject`, { method: 'DELETE' });
+    return;
+  }
+
+  // Approval is acknowledged immediately and runs in the background. Executing
+  // a runbook and proving it worked takes minutes - one break cadence for the
+  // in-flight break, then whole breaks to measure - and holding an HTTP request
+  // open for that hangs the caller. This gate died on a fetch headers timeout
+  // doing exactly that, reporting a failure that had not happened.
+  process.stdout.write('  executing and verifying');
+  const approveDeadline = Date.now() + 12 * 60_000;
+  let after: AgentRun | undefined;
+  while (Date.now() < approveDeadline) {
+    await sleep(15_000);
+    after = await json<AgentRun[]>(`${AGENT}/runs`)
+      .then((rs) => rs.find((r) => r.runId === run.runId))
+      .catch(() => undefined);
+    if (after && after.outcome !== 'awaiting_approval') break;
+    process.stdout.write('.');
+  }
+  console.log('');
 
   // The fault stays injected: recovery must come from routing around it, not
   // from the fault having been cleared underneath.
   const faultStillActive = (await json<unknown[]>(`${CHAOS}/inject`)).length > 0;
   check(
     'approving the held plan executes it and recovery is verified with the fault still injected',
-    body.ok && after?.outcome === 'remediated' && after?.approvedBy === 'gate-d' && faultStillActive,
-    `ok=${body.ok} outcome=${body.outcome} recovered=${body.recovered} ` +
-      `approvedBy=${after?.approvedBy} faultStillInjected=${faultStillActive} - ${body.reason}`,
+    after?.outcome === 'remediated' &&
+      after?.recovered === true &&
+      after?.approvedBy === 'gate-d' &&
+      faultStillActive,
+    `outcome=${after?.outcome ?? 'still awaiting'} recovered=${after?.recovered ?? false} ` +
+      `approvedBy=${after?.approvedBy} faultStillInjected=${faultStillActive}`,
   );
   await fetch(`${CHAOS}/inject`, { method: 'DELETE' });
 }
