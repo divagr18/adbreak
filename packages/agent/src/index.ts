@@ -146,7 +146,13 @@ async function handle(instance: AlertInstance): Promise<void> {
     return;
   }
 
-  const liveGap = await scalar(impressionGap(deviceClass, '3m'));
+  // 4m, not 3m. The gap must be read over a whole number of 120s break
+  // cadences or it is unusable: measured on a healthy plant, 3m ranged 0.759
+  // across seven samples while 4m ranged 0.009. This guard was left on 3m when
+  // the other windows were aligned, so the agent's decision to engage at all
+  // was riding on the noisiest measurement in the system - and a real F07 was
+  // waved through as "the leak has stopped".
+  const liveGap = await scalar(impressionGap(deviceClass, '4m'));
   if (liveGap === null || liveGap < 0.2) {
     svc.log.info('alert still firing but the leak has stopped, standing down', {
       device_class: deviceClass,
@@ -224,8 +230,21 @@ async function handle(instance: AlertInstance): Promise<void> {
   }
 }
 
+/**
+ * Autonomous polling can be paused at runtime.
+ *
+ * Not a demo cheat - Gate C proves the polling path end to end, and it stays on
+ * everywhere else. But the SLO alert is windowed over 15 minutes, so it keeps
+ * firing long after a fault clears, and the poller then opens runs every 15
+ * seconds that consume the post-remediation cooldown. A harness testing the
+ * safety machinery cannot tell its own alert apart from that traffic: Gate D
+ * spent three runs reporting "no run" for scenarios whose alerts the agent had
+ * quite correctly stood down from.
+ */
+let pollingEnabled = process.env.AGENT_POLL !== 'off';
+
 async function poll(): Promise<void> {
-  if (busy) return;
+  if (!pollingEnabled || busy) return;
   busy = true;
   try {
     const alerting = await firingInstances();
@@ -245,7 +264,7 @@ async function poll(): Promise<void> {
   }
 }
 
-if (process.env.AGENT_POLL !== 'off') setInterval(() => void poll(), POLL_MS);
+setInterval(() => void poll(), POLL_MS);
 
 // ---- endpoints ------------------------------------------------------------
 
@@ -273,6 +292,13 @@ admin.get('/cooldown', (_req, res) =>
     Object.fromEntries([...remediatedUntil].map(([k, v]) => [k, new Date(v).toISOString()])),
   ),
 );
+admin.get('/polling', (_req, res) => res.json({ enabled: pollingEnabled }));
+admin.post('/polling', (req, res) => {
+  pollingEnabled = req.body?.enabled !== false;
+  svc.log.warn('autonomous polling toggled', { enabled: pollingEnabled });
+  res.json({ enabled: pollingEnabled });
+});
+
 admin.get('/agent-chaos', (_req, res) => res.json(agentChaos));
 admin.post('/agent-chaos', (req, res) => {
   const mode = req.body?.mode;

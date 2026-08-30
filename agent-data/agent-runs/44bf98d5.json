@@ -1,0 +1,121 @@
+{
+  "runId": "44bf98d5",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788109033613",
+    "channel": "sports-1",
+    "region": "eu",
+    "deviceClass": "roku",
+    "startedAt": "2026-08-30T16:41:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-30T16:57:13.837Z",
+      "durationMs": 41882,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "beacon"
+        ],
+        "affectedDimensions": {
+          "deviceClass": "roku",
+          "cdn": null,
+          "region": "eu"
+        },
+        "reasoning": "The incident reports a 0% revenue realization rate (RRR) and a confirmed revenue leak, indicating a critical issue. Despite this, the 'impression_gap_affected' metric for Roku devices shows a 0 gap, meaning client-side beacons are being fired as expected. Ad pod fill rates are healthy, and delivery metrics show no errors. This contradiction suggests that while ads are likely being delivered and clients are successfully dispatching beacons, these beacons are not being properly processed or attributed for revenue realization. Therefore, the 'beacon' stage, specifically its server-side ingestion and processing of events for revenue attribution, is the primary suspect. The problem is isolated to 'roku' devices in the 'eu' region based on the incident scope."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 1007,
+        "output": 218
+      },
+      "costUsd": 0.42355000000000004,
+      "queries": [
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"} offset 4m) or vector(0)), 1))",
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"} offset 4m) or vector(0)), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "((sum(adbreak_ads_nofill_total) or vector(0)) - (sum(adbreak_ads_nofill_total offset 5m) or vector(0))) / clamp_min(sum(adbreak_ads_request_total) - sum(adbreak_ads_request_total offset 5m), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-30T16:57:55.719Z",
+      "durationMs": 9485,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "impression_gap_affected",
+          "impression_gap_others",
+          "cdn_5xx",
+          "stitch_errors",
+          "ads_latency_p99",
+          "ads_pod_seconds_filled",
+          "ads_nofill_rate",
+          "signal_chain_divergence",
+          "revenue_leak_usd"
+        ],
+        "findings": [
+          "No impression gap detected for affected or other devices, indicating successful beacon firing.",
+          "No 5xx errors from the CDN, ruling out delivery issues.",
+          "No ad stitching errors, indicating a healthy ad insertion process.",
+          "P99 ad response latency is very low (0.199s), suggesting performant ad decisioning.",
+          "Ad pod fill rate is high (87.5%), with no recorded ad no-fills, indicating effective ad decisioning and availability.",
+          "Signal chain divergence metric is null, but other metrics confirm signal chain health.",
+          "A revenue leak of $5.96 USD is observed."
+        ],
+        "conclusion": "The ad-insertion signal chain (cue signalling, ad decisioning, packaging, stitching, delivery) is healthy across all observed metrics. The revenue loss points downstream to billing systems, as per the incident resolution guidance for a healthy signal chain."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 959,
+        "output": 312
+      },
+      "costUsd": 0.53385,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-30T16:57:55.719Z",
+      "durationMs": 9486,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [],
+        "findings": [
+          "No specific slice is losing impressions. All device class and CDN combinations show healthy impression rates (0.0 fraction_of_impressions_lost)."
+        ],
+        "conclusion": "The fault is neither scoped to a device class nor a CDN, as there are no detected impression losses in the provided data."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 724,
+        "output": 93
+      },
+      "costUsd": 0.22485,
+      "queries": [
+        "1 - ((sum by (device_class, cdn) (adbreak_beacon_fired_total{event=\"impression\"}) - sum by (device_class, cdn) (adbreak_beacon_fired_total{event=\"impression\"} offset 4m)) / clamp_min(sum by (device_class, cdn) (adbreak_beacon_expected_total{event=\"impression\"}) - sum by (device_class, cdn) (adbreak_beacon_expected_total{event=\"impression\"} offset 4m), 1))"
+      ]
+    }
+  ],
+  "outcome": "killed_by_watchdog",
+  "costUsd": 1.18225,
+  "detectedAt": "2026-08-30T16:57:13.837Z",
+  "watchdog": {
+    "reason": "runaway",
+    "detail": "run cost $0.9574 exceeded the $0.50 ceiling"
+  },
+  "error": "watchdog terminated the run: runaway — run cost $0.9574 exceeded the $0.50 ceiling"
+}

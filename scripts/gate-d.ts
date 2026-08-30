@@ -344,6 +344,13 @@ async function escalatesWhenUnmapped(): Promise<void> {
 async function main(): Promise<void> {
   console.log('Gate D - the agent stops itself, refuses without a human, and escalates.\n');
 
+  // Pause autonomous polling for the duration. Gate C already proves that path
+  // end to end; here it only adds runs the gate cannot tell apart from its own,
+  // and which burn the post-remediation cooldown that then swallows the gate's
+  // alert. Restored below, and again on exit whatever happens.
+  await post(`${AGENT}/admin/polling`, { enabled: false });
+  console.log('autonomous polling paused for the duration of this gate\n');
+
   await watchdogKill('stall', 'stalled');
   await watchdogKill('loop', 'looping');
   await watchdogKill('cost', 'runaway');
@@ -352,11 +359,22 @@ async function main(): Promise<void> {
   await escalatesWhenUnmapped();
 
   await reset();
+  await post(`${AGENT}/admin/polling`, { enabled: true });
+  console.log('\nautonomous polling restored');
 
   const passed = results.filter((r) => r.ok).length;
   console.log(`\n${passed}/${results.length} checks passed`);
   console.log(`GATE D: ${passed === results.length ? 'PASSED' : 'FAILED'}`);
   if (passed !== results.length) process.exit(1);
 }
+
+// Leaving polling off would quietly disable the agent for whatever runs next.
+process.on('exit', () => {
+  void fetch(`${AGENT}/admin/polling`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ enabled: true }),
+  }).catch(() => {});
+});
 
 void main();
