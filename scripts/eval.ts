@@ -308,6 +308,10 @@ function render(results: Result[]): string {
     '',
     `Scenarios: ${results.length} · graded against ground-truth.jsonl, which the agent cannot read.`,
     '',
+    'Incidents were triggered through the alert webhook with autonomous polling paused, so each',
+    'scenario grades exactly one deterministic run. The polling path itself is proven end to end',
+    'by Gate C.',
+    '',
     `- **RCA top-1 accuracy**: ${pct(rca, faultScenarios.length)} (${rca}/${faultScenarios.length})`,
     `- **Runbook selection**: ${pct(rb, faultScenarios.length)} (${rb}/${faultScenarios.length})`,
     `- **Handled correctly**: ${pct(handled, results.length)} (${handled}/${results.length})`,
@@ -328,9 +332,21 @@ function render(results: Result[]): string {
 
 async function main(): Promise<void> {
   console.log(`AdBreak evaluation — ${SCENARIOS.length} scenarios\n`);
+
+  // Pause autonomous polling, as Gate D does and for the same reason: the SLO
+  // alert is windowed over 15 minutes so it keeps firing after a fault clears,
+  // the poller opens runs this harness cannot tell apart from its own, and its
+  // post-remediation cooldown then swallows the harness's trigger. Gate C
+  // proves the polling path end to end; this scores diagnosis quality, which
+  // needs a deterministic trigger. Disclosed in the report so the numbers are
+  // read for what they are.
+  await post(`${AGENT}/admin/polling`, { enabled: false });
+  console.log('autonomous polling paused for the duration of this evaluation\n');
+
   const results: Result[] = [];
   for (const [i, s] of SCENARIOS.entries()) results.push(await runScenario(s, i));
   await reset();
+  await post(`${AGENT}/admin/polling`, { enabled: true });
 
   const markdown = render(results);
   writeFileSync(join(ROOT, 'agent-data', 'eval-report.json'), JSON.stringify(results, null, 2));
@@ -343,5 +359,14 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 }
+
+// Never leave the agent switched off for whatever runs next.
+process.on('exit', () => {
+  void fetch(`${AGENT}/admin/polling`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ enabled: true }),
+  }).catch(() => {});
+});
 
 void main();
