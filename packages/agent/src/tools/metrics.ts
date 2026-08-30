@@ -71,7 +71,18 @@ export const adsLatencyP99 = (window = '5m'): string =>
 export const adsFillRatio = (): string => `avg(adbreak_ads_fill_ratio)`;
 
 /** Fraction of ad requests answered with an empty VAST. Zero on a healthy plant. */
-export const adsNoFillRate = (window = '5m'): string =>
+/**
+ * Window is 2m, not 5m, and that is a diagnosis-critical choice.
+ *
+ * ads_fill_ratio is a gauge: when the ad server stops filling, it collapses to
+ * zero instantly. This is a windowed rate, so over 5m a TOTAL no-fill still
+ * reads only 0.33 after 100 seconds. Presented side by side, the model
+ * reasonably weights the signal that already looks extreme and calls a total
+ * no-fill "underfill" - it diagnosed F09 instead of F04 twice for exactly this
+ * reason. Two minutes is one whole break's worth of ad requests, around 200
+ * samples, and reaches the true rate while the incident is still young.
+ */
+export const adsNoFillRate = (window = '2m'): string =>
   // An exact counter delta, for the same reason as the impression gap:
   // increase() extrapolates, and needs two points in the window before it says
   // anything useful. The ads service publishes this series at zero on startup
