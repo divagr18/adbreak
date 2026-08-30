@@ -125,3 +125,20 @@ export const impressionsExpected = (deviceClass?: string): string => {
   const sel = deviceClass ? `,device_class="${deviceClass}"` : '';
   return `sum(adbreak_beacon_expected_total{event="impression"${sel}})`;
 };
+
+/**
+ * Is this fault scoped to one device class, or is everything bleeding?
+ *
+ * A ratio, not a threshold on the others' absolute gap, because scoping is a
+ * comparison and only a comparison survives common-mode error. A break still in
+ * flight at the window edge has booked its expectations but not yet landed its
+ * impressions, which lifts EVERY slice at once - it pushed the healthy slices
+ * to 0.25 and blocked a correct F07 remediation whose own gap was 1.0. Dividing
+ * cancels exactly that: the numerator and denominator are lifted together.
+ *
+ * Near 0 means the fault is confined to the affected class. Near 1 means every
+ * class is losing impressions equally, which is not a scoped fault and must not
+ * be treated as one.
+ */
+export const gapScopeRatio = (deviceClass: string, window = '4m'): string =>
+  `(${impressionGapOthers(deviceClass, window)}) / clamp_min(${impressionGap(deviceClass, window)}, 0.01)`;

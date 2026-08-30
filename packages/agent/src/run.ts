@@ -83,8 +83,14 @@ const PRECONDITIONS: Record<
     met: (v) => (v ?? 0) > 0.4,
   },
   scoped_not_global: {
-    query: (device, window) => M.impressionGapOthers(device, window),
-    met: (v) => (v ?? 1) < 0.1,
+    // The others' gap RELATIVE to the affected one, not its absolute value.
+    // An in-flight break lifts every slice together, so an absolute threshold
+    // reads a healthy slice at 0.25 and blocks a correct remediation whose own
+    // gap is 1.0. A ratio cancels that common-mode lift. Below 0.4 means the
+    // affected class is losing impressions at more than twice the rate of
+    // everything else, which is what "scoped" actually means.
+    query: (device, window) => M.gapScopeRatio(device, window),
+    met: (v) => v !== null && v < 0.4,
   },
   fill_collapsed: {
     // No-fill rate, not the pod-seconds ratio: the latter reads 0.875 on a
