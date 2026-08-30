@@ -142,3 +142,21 @@ export const impressionsExpected = (deviceClass?: string): string => {
  */
 export const gapScopeRatio = (deviceClass: string, window = '4m'): string =>
   `(${impressionGapOthers(deviceClass, window)}) / clamp_min(${impressionGap(deviceClass, window)}, 0.01)`;
+
+/**
+ * Share of avails the stitcher could not fill, by any cause.
+ *
+ * This, not the ad server's own no-fill counter, is what "the ad server has
+ * stopped returning usable pods" actually means. On an F03 latency spike the
+ * ad server answers every request and its no-fill counter never moves - the
+ * responses simply arrive after the manifest deadline and are discarded. Only
+ * the stitcher knows an avail went out empty, and only that covers F03 and F04
+ * alike.
+ */
+export const availUnfilledRate = (window = '2m'): string =>
+  `((sum(adbreak_avail_unfilled_total) or vector(0)) - ` +
+  `(sum(adbreak_avail_unfilled_total offset ${window}) or vector(0))) / ` +
+  `clamp_min(((sum(adbreak_avail_decided_total) or vector(0)) - ` +
+  `(sum(adbreak_avail_decided_total offset ${window}) or vector(0))) + ` +
+  `((sum(adbreak_avail_unfilled_total) or vector(0)) - ` +
+  `(sum(adbreak_avail_unfilled_total offset ${window}) or vector(0))), 1)`;

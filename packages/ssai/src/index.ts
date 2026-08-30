@@ -147,6 +147,7 @@ function schedule(atMs: number, fn: () => void): void {
 }
 
 const availDecided = svc.counter(METRICS.availDecided);
+const availUnfilled = svc.counter(METRICS.availUnfilled);
 const slateSeconds = svc.counter(METRICS.slateSeconds);
 const stitchErrors = svc.counter(METRICS.stitchErrors);
 const manifestLatency = svc.histogram(METRICS.manifestLatency);
@@ -306,7 +307,12 @@ async function decide(session: Session, cue: CueWindow): Promise<void> {
         headers: traceparent ? { traceparent } : {},
         signal: AbortSignal.timeout(ADS_TIMEOUT_MS),
       });
-      return parseVast(await res.text());
+      const pod = parseVast(await res.text());
+      // An empty VAST is an unfilled avail just as surely as a timeout is.
+      if (pod.length === 0) {
+        availUnfilled.inc({ channel: CHANNEL, region: session.region, reason: 'no_fill' });
+      }
+      return pod;
     } catch (err) {
       // A deadline miss is a no-fill for this break: we cannot hold the
       // manifest waiting. This is what turns an ADS latency spike into a
@@ -316,6 +322,15 @@ async function decide(session: Session, cue: CueWindow): Promise<void> {
         session_id: session.id,
         timeout_ms: ADS_TIMEOUT_MS,
         err: String(err),
+      });
+      // Counted, not just logged. This is the difference between an ADS latency
+      // spike being visible as a revenue event and being invisible: the ad
+      // server's own no-fill counter never moves here, because it does answer -
+      // just too late for the manifest to wait.
+      availUnfilled.inc({
+        channel: CHANNEL,
+        region: session.region,
+        reason: String(err).includes('imeout') ? 'timeout' : 'error',
       });
       return [];
     }

@@ -21,6 +21,19 @@ export const METRICS = {
     help: 'Avails for which the ADS returned a usable pod',
     labels: ['channel', 'region', 'ads'] as const,
   },
+  availUnfilled: {
+    /**
+     * Avails the stitcher could not fill, by cause. The operator-relevant
+     * signal, and the only one that covers every way an ad break comes up
+     * empty: an empty VAST (F04), a response that arrived after the deadline
+     * (F03), or an outright error. adbreak_ads_nofill_total sees only the
+     * first, because on a latency spike the ad server does eventually answer -
+     * just too late to be of any use.
+     */
+    name: 'adbreak_avail_unfilled_total',
+    help: 'Avails the stitcher could not fill with a usable pod, by cause',
+    labels: ['channel', 'region', 'reason'] as const,
+  },
 
   // Ad decisioning
   adsRequest: {

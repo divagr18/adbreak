@@ -102,7 +102,13 @@ const PRECONDITIONS: Record<
     // accident. Demanding half also raced the measurement: the rate is computed
     // over 5m, so a TOTAL no-fill only reads 0.5 after two and a half minutes,
     // and a run that evaluated at exactly 0.5 was blocked by `> 0.5`.
-    query: () => M.adsNoFillRate(),
+    // The STITCHER's unfilled rate, not the ad server's no-fill rate. The
+    // runbook applies to F03 as well as F04, and on a latency spike the ad
+    // server answers every request - its no-fill counter never moves, while
+    // every avail still goes out empty because the answers arrive after the
+    // manifest deadline. Keying off the ad server would have blocked this
+    // runbook on exactly half the faults it declares itself good for.
+    query: () => M.availUnfilledRate(),
     met: (v) => (v ?? 0) > 0.25,
   },
   fallback_available: {
@@ -273,6 +279,7 @@ async function snapshot(deviceClass: string): Promise<Record<string, unknown>> {
     ads_latency_p99: M.adsLatencyP99(),
     ads_pod_seconds_filled: M.adsFillRatio(),
     ads_nofill_rate: M.adsNoFillRate(),
+    avail_unfilled_rate: M.availUnfilledRate(),
     signal_chain_divergence: M.availSignalChain(),
     revenue_leak_usd: M.revenueLeakUsd(),
   };
@@ -459,6 +466,11 @@ export async function runIncident(
         'pod seconds is an instantaneous gauge while the no-fill rate is a windowed',
         'rate that is still climbing early in an incident, so do not read the larger',
         'number as the stronger evidence.',
+        'avail_unfilled_rate is the share of ad breaks the stitcher could not fill by',
+        'ANY cause. It rises for F04 and also for F03, where the ad server answers',
+        'every request but too late for the manifest deadline - which is why an F03',
+        'latency spike shows a high avail_unfilled_rate while ads_nofill_rate stays at',
+        'zero. Use ads_latency_p99 to tell those two apart.',
         'Scope the fault to the narrowest dimensions the evidence supports.',
         'Return JSON only.',
       ].join(' '),
@@ -476,6 +488,7 @@ export async function runIncident(
       stitch_errors: await scalar(M.stitchErrors()),
       ads_pod_seconds_filled: await scalar(M.adsFillRatio()),
       ads_nofill_rate: await scalar(M.adsNoFillRate()),
+      avail_unfilled_rate: await scalar(M.availUnfilledRate()),
       signal_chain_divergence: await scalar(M.availSignalChain()),
     };
     const falsification = await runStep({
