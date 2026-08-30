@@ -373,12 +373,26 @@ async function main(): Promise<void> {
   await post(`${AGENT}/admin/polling`, { enabled: false });
   console.log('autonomous polling paused for the duration of this gate\n');
 
-  await watchdogKill('stall', 'stalled');
-  await watchdogKill('loop', 'looping');
-  await watchdogKill('cost', 'runaway');
-  await healthyRunSurvives();
-  await approvalPath();
-  await escalatesWhenUnmapped();
+  // Scenarios can be run individually: `npx tsx scripts/gate-d.ts approval`.
+  // A defect found in one scenario otherwise costs a full pass through the
+  // others to re-test, which turned single-line fixes into hour-long loops.
+  // Only a full run counts as a gate result.
+  const SCENARIOS: Record<string, () => Promise<void>> = {
+    stall: () => watchdogKill('stall', 'stalled'),
+    loop: () => watchdogKill('loop', 'looping'),
+    runaway: () => watchdogKill('cost', 'runaway'),
+    healthy: healthyRunSurvives,
+    approval: approvalPath,
+    escalate: escalatesWhenUnmapped,
+  };
+  const only = process.argv.slice(2).filter((a) => a in SCENARIOS);
+  if (only.length > 0) {
+    console.log(`running only: ${only.join(', ')} — NOT a gate result
+`);
+    for (const name of only) await SCENARIOS[name]();
+  } else {
+    for (const run of Object.values(SCENARIOS)) await run();
+  }
 
   await reset();
   await post(`${AGENT}/admin/polling`, { enabled: true });
