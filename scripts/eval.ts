@@ -9,6 +9,7 @@
  *   npx tsx scripts/eval.ts
  */
 import { readFileSync, writeFileSync } from 'node:fs';
+import { scalar } from './q.js';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -151,22 +152,55 @@ async function reset(): Promise<void> {
 /**
  * Wait for the plant to be genuinely quiet before injecting.
  *
- * Learned the hard way: a run once diagnosed F04 correctly and was then
- * refuted by its own falsification step because cdn_5xx read 324 — residue
- * from earlier restarts. Grading against a contaminated plant measures the
- * contamination, not the agent.
+ * Learned the hard way, twice. A run once diagnosed F04 correctly and was then
+ * refuted by its own falsification step because cdn_5xx read 324 - residue from
+ * earlier restarts. And clearing a fault is not the same as the plant being
+ * well again: F08 suppresses beacons for every session that could not fetch its
+ * media, and those losses sit inside the measurement windows for minutes
+ * afterwards. Grading against a contaminated plant measures the contamination.
+ *
+ * Three consecutive healthy samples, because a recovering plant oscillates
+ * across the boundary - impressions arrive for expectations booked during the
+ * outage, so the gap swings negative and RRR overshoots before returning. One
+ * passing sample is not evidence.
  */
-async function settle(maxMs = 6 * 60_000): Promise<void> {
+async function settle(maxMs = 20 * 60_000): Promise<void> {
+  const CHECKS: [string, (v: number | null) => boolean][] = [
+    [
+      'sum(increase(adbreak_revenue_realized_usd_total[15m])) / ' +
+        '(sum(increase(adbreak_revenue_expected_usd_total[15m])) > 0)',
+      (v) => v !== null && v > 0.9 && v < 1.02,
+    ],
+    ['sum(increase(adbreak_cdn_requests_total{status=~"5.."}[5m])) or vector(0)', (v) => (v ?? 1) === 0],
+    ['sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)', (v) => (v ?? 1) === 0],
+    [
+      '1 - ((sum(adbreak_beacon_fired_total{event="impression"}) - ' +
+        'sum(adbreak_beacon_fired_total{event="impression"} offset 4m)) / ' +
+        'clamp_min(sum(adbreak_beacon_expected_total{event="impression"}) - ' +
+        'sum(adbreak_beacon_expected_total{event="impression"} offset 4m), 1))',
+      (v) => v !== null && Math.abs(v) < 0.05,
+    ],
+  ];
   const deadline = Date.now() + maxMs;
+  let streak = 0;
+  process.stdout.write('  settling');
   while (Date.now() < deadline) {
-    const faults = await json<unknown[]>(`${EDGE}/admin/faults`).catch(() => []);
-    if (faults.length === 0) {
-      // Give rate windows time to flush the previous scenario.
-      await sleep(45_000);
+    let ok = true;
+    for (const [expr, pass] of CHECKS) {
+      if (!pass(await scalar(expr).catch(() => null))) {
+        ok = false;
+        break;
+      }
+    }
+    streak = ok ? streak + 1 : 0;
+    if (streak >= 3) {
+      console.log(' ok');
       return;
     }
-    await sleep(10_000);
+    process.stdout.write(ok ? '+' : '.');
+    await sleep(30_000);
   }
+  console.log(' gave up waiting - the plant is still not quiet');
 }
 
 async function runScenario(s: Scenario, index: number): Promise<Result> {
