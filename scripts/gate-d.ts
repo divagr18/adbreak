@@ -400,7 +400,14 @@ async function main(): Promise<void> {
 
   const passed = results.filter((r) => r.ok).length;
   console.log(`\n${passed}/${results.length} checks passed`);
-  console.log(`GATE D: ${passed === results.length ? 'PASSED' : 'FAILED'}`);
+  // A partial run must never print a gate verdict. Claiming more than was
+  // tested is the exact defect this gate exists to catch, and it has no
+  // business living in the gate's own reporting.
+  if (only.length > 0) {
+    console.log(`PARTIAL RUN (${only.join(', ')}) — not a gate result`);
+  } else {
+    console.log(`GATE D: ${passed === results.length ? 'PASSED' : 'FAILED'}`);
+  }
   if (passed !== results.length) process.exit(1);
 }
 
