@@ -42,7 +42,9 @@ verification:
   window: 2m
   # One break cadence plus scrape lag: recovery cannot be observed until the
   # next break has actually run and its beacons have been scraped.
-  timeout_s: 240
+  # One cadence to let the in-flight break finish, plus two whole breaks to
+  # measure against, plus scrape lag.
+  timeout_s: 420
 
 rollback:
   - type: config_patch

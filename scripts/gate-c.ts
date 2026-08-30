@@ -220,10 +220,14 @@ async function main(): Promise<void> {
   // Recovery cannot be observed before the next break runs, so this bound is
   // set by the plant's 120s break cadence, not by the agent's speed. The
   // agent's own contribution is the detect-to-remediate figure above.
+  // Bounded by the plant, not the agent. A fix cannot be proven until one
+  // whole break has run after it landed, and the break in flight when it
+  // lands is already lost. The agent's own contribution is detect-to-remediate
+  // above; this figure is dominated by waiting for the plant to prove it.
   check(
-    'detect to verified recovery under 300s',
-    toVerified !== null && toVerified < 300,
-    `${toVerified?.toFixed(1)}s (bounded by the 120s break cadence)`,
+    'detect to verified recovery under 480s',
+    toVerified !== null && toVerified < 480,
+    `${toVerified?.toFixed(1)}s (one lost in-flight break plus two to measure, at 120s each)`,
   );
   check('cost under $0.25 per incident', run.costUsd < 0.25, `$${run.costUsd.toFixed(4)}`);
 

@@ -137,6 +137,14 @@ const VERIFICATION: Record<
 /** Expected impressions that must accrue post-fix before a verdict is credible. */
 const MIN_SAMPLES = Number(process.env.VERIFY_MIN_SAMPLES ?? 20);
 
+/**
+ * How long one ad break cycle takes on this plant.
+ *
+ * Recovery cannot be observed faster than this, whatever the agent does: a fix
+ * only proves itself on a break that runs entirely after it landed.
+ */
+const BREAK_CADENCE_MS = Number(process.env.BREAK_CADENCE_S ?? 120) * 1000;
+
 const nowIso = () => new Date().toISOString();
 
 export interface PreconditionResult {
@@ -201,12 +209,23 @@ export async function verifyRecovery(
   };
   const numQuery = verifier.numerator(device);
   const denQuery = verifier.denominator(device);
-  const query = `(${numQuery}) / (${denQuery})  [delta since remediation]`;
+  const query = `(${numQuery}) / (${denQuery})  [delta from the first whole break after remediation]`;
 
-  // Baseline the counters at the moment the fix landed.
+  // Let the break that was already in flight finish before baselining.
+  //
+  // A fix landing mid-break cannot repair that break: its expectations were
+  // booked at the spot boundary and its impressions were already lost. Baseline
+  // at the instant of the fix and those losses sit inside the delta forever, so
+  // the ratio converges as 1/N - measured descending 1, 0.5, 0.33, 0.25 and
+  // stalling there - and never reaches the recovery threshold. An earlier run
+  // verified in 145s only because its fix happened to land between breaks.
+  // Waiting one cadence makes the measurement independent of that coin flip.
+  const deadline = Date.now() + runbook.verification.timeout_s * 1000;
+  await new Promise((r) => setTimeout(r, BREAK_CADENCE_MS));
+  supervisor?.assertAlive();
+
   const firedAtFix = (await scalar(numQuery)) ?? 0;
   const expectedAtFix = (await scalar(denQuery)) ?? 0;
-  const deadline = Date.now() + runbook.verification.timeout_s * 1000;
 
   let residualGap: number | null = null;
   let recovered = false;

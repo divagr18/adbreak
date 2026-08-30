@@ -48,7 +48,9 @@ verification:
   # show recovery until the faulty break ages out of it.
   expr: 'impressions_fired / impressions_expected, delta since remediation, >= 0.95'
   window: 2m
-  timeout_s: 240
+  # One cadence to let the in-flight break finish, plus two whole breaks to
+  # measure against, plus scrape lag.
+  timeout_s: 420
 
 rollback:
   - type: config_patch
