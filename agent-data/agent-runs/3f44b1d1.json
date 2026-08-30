@@ -1,0 +1,59 @@
+{
+  "runId": "3f44b1d1",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788124230045",
+    "channel": "sports-1",
+    "region": "us-east",
+    "deviceClass": "roku",
+    "startedAt": "2026-08-30T21:10:30.045Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-30T21:10:30.332Z",
+      "durationMs": 23928,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "deliver",
+          "play",
+          "beacon"
+        ],
+        "affectedDimensions": {
+          "deviceClass": "roku",
+          "cdn": null,
+          "region": null
+        },
+        "reasoning": "The incident reports an RRR of 0, and the snapshot shows a 33.3% impression gap specifically for 'roku' devices ('impression_gap_affected'), while other device classes are healthy ('impression_gap_others'). This indicates a significant and immediate revenue impact. Metrics for ad decisioning ('ads_latency_p99', 'ads_pod_seconds_filled', 'ads_nofill_rate') and stitching ('stitch_errors') appear healthy. There are no CDN 5xx errors. The problem is localized to Roku devices, suggesting a client-side or last-mile issue affecting the delivery to the player, playback of ads, or the firing/reporting of impression beacons. Therefore, 'deliver' (last-mile content delivery), 'play' (client-side ad playback), and 'beacon' (impression tracking) stages are the most likely suspects. The region is set to null as the provided metrics do not offer a regional breakdown to confirm if the issue is exclusive to 'us-east' or affects Roku devices globally."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 1063,
+        "output": 294
+      },
+      "costUsd": 0.52695,
+      "queries": [
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"} offset 4m) or vector(0)), 1))",
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"} offset 4m) or vector(0)), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "((sum(adbreak_ads_nofill_total) or vector(0)) - (sum(adbreak_ads_nofill_total offset 2m) or vector(0))) / clamp_min(sum(adbreak_ads_request_total) - sum(adbreak_ads_request_total offset 2m), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    }
+  ],
+  "outcome": "killed_by_watchdog",
+  "costUsd": 0.52695,
+  "detectedAt": "2026-08-30T21:10:30.332Z",
+  "watchdog": {
+    "reason": "runaway",
+    "detail": "run cost $0.5270 exceeded the $0.50 ceiling"
+  },
+  "error": "watchdog terminated the run: runaway — run cost $0.5270 exceeded the $0.50 ceiling"
+}

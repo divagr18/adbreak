@@ -89,8 +89,8 @@ const NOFILL_RATE =
 const CDN_5XX = 'sum(increase(adbreak_cdn_requests_total{status=~"5.."}[5m])) or vector(0)';
 
 /** Is the plant quiet enough to measure against? */
-async function health(): Promise<void> {
-  const checks: [string, string, (v: number | null) => boolean][] = [
+function healthChecks(): [string, string, (v: number | null) => boolean][] {
+  return [
     [
       'RRR (15m)',
       'sum(increase(adbreak_revenue_realized_usd_total[15m])) / ' +
@@ -110,8 +110,19 @@ async function health(): Promise<void> {
     // its own wait loop for fifteen minutes.
     ['impression gap, all devices', gap('', '10m'), (v) => v !== null && Math.abs(v) < 0.05],
   ];
+}
+
+/** The same checks, silently — for the wait loop. */
+async function isHealthy(): Promise<boolean> {
+  for (const [, expr, ok] of healthChecks()) {
+    if (!ok(await scalar(expr).catch(() => null))) return false;
+  }
+  return true;
+}
+
+async function health(): Promise<void> {
   let allOk = true;
-  for (const [name, expr, ok] of checks) {
+  for (const [name, expr, ok] of healthChecks()) {
     const v = await scalar(expr).catch(() => null);
     const good = ok(v);
     allOk &&= good;
@@ -153,13 +164,40 @@ async function baseline(device: string): Promise<void> {
   }
 }
 
+/**
+ * Wait until the plant reads healthy CONSECUTIVELY, not once.
+ *
+ * A plant recovering from a fault oscillates across the boundary - impressions
+ * arrive for expectations booked during the outage, so the gap swings negative
+ * and RRR overshoots above 1 before settling. A settle loop that stops at the
+ * first passing sample will happily start a gate on that, and one sample of a
+ * periodic system is not evidence.
+ */
+async function waitHealthy(needed = 3, maxMinutes = 25): Promise<void> {
+  const deadline = Date.now() + maxMinutes * 60_000;
+  let streak = 0;
+  while (Date.now() < deadline) {
+    const ok = await isHealthy();
+    streak = ok ? streak + 1 : 0;
+    console.log(`  ${new Date().toISOString().slice(11, 19)}  ${ok ? 'healthy' : 'not yet'}  (${streak}/${needed})`);
+    if (streak >= needed) {
+      console.log('plant is settled — safe to measure');
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 45_000));
+  }
+  console.log('gave up waiting — the plant never settled');
+  process.exitCode = 1;
+}
+
 async function main(): Promise<void> {
   const [arg, ...rest] = process.argv.slice(2);
   if (!arg) {
-    console.log('usage: npx tsx scripts/q.ts <promql | health | baseline [device]>');
+    console.log('usage: npx tsx scripts/q.ts <promql | health | wait | baseline [device]>');
     return;
   }
   if (arg === 'health') return health();
+  if (arg === 'wait') return waitHealthy(Number(rest[0] ?? 3));
   if (arg === 'baseline') return baseline(rest[0] ?? 'roku');
 
   for (const r of await query([arg, ...rest].join(' '))) {

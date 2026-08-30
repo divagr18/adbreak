@@ -1,0 +1,189 @@
+{
+  "runId": "13704e0b",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788125863957",
+    "channel": "sports-1",
+    "region": "eu",
+    "deviceClass": "roku",
+    "startedAt": "2026-08-30T20:49:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-30T21:37:44.264Z",
+      "durationMs": 14750,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "deliver",
+          "play",
+          "beacon",
+          "decide"
+        ],
+        "affectedDimensions": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": "eu"
+        },
+        "reasoning": "The incident is critical due to an RRR of 0 and a significant impression gap (~16%) affecting all device classes. The primary cause appears to be a very high rate of CDN 5xx errors (1839.03), directly impacting the 'deliver' stage. This prevents ad creatives from being served, leading to failures in the 'play' and 'beacon' stages and a revenue leak. While the 'decide' stage shows an 87.5% pod fill rate, indicating some ad availability issues, the widespread CDN errors are the most severe and immediate concern. The problem is global across device classes (impression_gap_others is similar to impression_gap_affected) but localized to the 'eu' region as per incident report."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 1058,
+        "output": 240
+      },
+      "costUsd": 0.0009174000000000001,
+      "queries": [
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"} offset 4m) or vector(0)), 1))",
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"} offset 4m) or vector(0)), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "((sum(adbreak_ads_nofill_total) or vector(0)) - (sum(adbreak_ads_nofill_total offset 2m) or vector(0))) / clamp_min(sum(adbreak_ads_request_total) - sum(adbreak_ads_request_total offset 2m), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-30T21:37:59.014Z",
+      "durationMs": 8915,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "impression_gap_affected",
+          "impression_gap_others",
+          "cdn_5xx",
+          "stitch_errors",
+          "ads_latency_p99",
+          "ads_pod_seconds_filled",
+          "ads_nofill_rate",
+          "signal_chain_divergence",
+          "revenue_leak_usd"
+        ],
+        "findings": [
+          "A significant impression gap (approximately 16.18%) is observed for the affected Roku devices, but a very similar gap (approximately 16.57%) is also present for other device classes, indicating a widespread issue.",
+          "There is a high volume of CDN 5xx errors (1839 incidents), strongly suggesting issues with content delivery.",
+          "Ad decisioning is performing well, with an excellent pod fill rate (around 87.5%) and no explicit ad no-fills.",
+          "Ad decisioning latency (P99 at 199ms) is within acceptable limits.",
+          "There are no reported ad stitching errors."
+        ],
+        "conclusion": "The data indicates a revenue loss is occurring due to significant impression gaps, which are directly correlated with a high volume of CDN 5xx errors. The upstream components of the signal chain, including ad decisioning and ad stitching, appear to be healthy. This points to a problem in the ad delivery phase, specifically at the CDN layer, preventing ads from being delivered or played successfully across all device classes."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 1010,
+        "output": 347
+      },
+      "costUsd": 0.0011705,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-30T21:37:59.014Z",
+      "durationMs": 8915,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [],
+        "findings": [
+          "The following slices are healthy (0% impression loss): device_class='android' and cdn='cdn-east', device_class='firetv' and cdn='cdn-east', device_class='ios' and cdn='cdn-east', device_class='roku' and cdn='cdn-east', device_class='smarttv' and cdn='cdn-east', device_class='web' and cdn='cdn-east'.",
+          "The following slices are losing impressions: device_class='android' and cdn='cdn-west' (50%), device_class='firetv' and cdn='cdn-west' (50%), device_class='ios' and cdn='cdn-west' (50%), device_class='roku' and cdn='cdn-west' (50%), device_class='smarttv' and cdn='cdn-west' (50%), device_class='web' and cdn='cdn-west' (50%)."
+        ],
+        "conclusion": "The fault is scoped to a CDN: 'cdn-west' is experiencing 50% impression loss across all device classes. All device classes are healthy when served by 'cdn-east'."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 736,
+        "output": 296
+      },
+      "costUsd": 0.0009607999999999999,
+      "queries": [
+        "1 - ((sum by (device_class, cdn) (adbreak_beacon_fired_total{event=\"impression\"}) - sum by (device_class, cdn) (adbreak_beacon_fired_total{event=\"impression\"} offset 4m)) / clamp_min(sum by (device_class, cdn) (adbreak_beacon_expected_total{event=\"impression\"}) - sum by (device_class, cdn) (adbreak_beacon_expected_total{event=\"impression\"} offset 4m), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-30T21:38:07.929Z",
+      "durationMs": 14034,
+      "output": {
+        "failureClass": "F08",
+        "stage": "deliver",
+        "cause": "A high rate of 5xx errors from CDN 'cdn-west' is preventing the delivery of ad segments to all device classes served by it.",
+        "confidence": 1,
+        "supportingEvidence": [
+          "A very high volume of CDN 5xx errors (1839) was observed.",
+          "Impression loss is localized to a single CDN: all device classes on 'cdn-west' show 50% loss, while all on 'cdn-east' show 0% loss.",
+          "Upstream ad decisioning and stitching metrics are healthy: ads_nofill_rate is 0, ads_pod_seconds_filled is normal (~0.875), and stitch_errors is 0."
+        ],
+        "scope": {
+          "deviceClass": null,
+          "cdn": "cdn-west",
+          "region": null
+        },
+        "predictedSignature": "High cdn_5xx errors and impression loss correlated with a specific CDN."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2649,
+        "output": 245
+      },
+      "costUsd": 0.00576125
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-30T21:38:21.963Z",
+      "durationMs": 20186,
+      "output": {
+        "survived": false,
+        "testsAttempted": [
+          "F08",
+          "F04",
+          "F09"
+        ],
+        "contradictions": [
+          "The hypothesis states that impression loss is 50% for all device classes on 'cdn-west'. The live probe 'other_device_classes_gap' reads 0.0828, which is a massive drop from the 50% level that was core to the diagnosis. This breaks the stated correlation between the CDN failure and its impact across all device classes."
+        ],
+        "verdict": "The hypothesis is refuted. While the 'cdn_5xx' rate remains high, supporting an ongoing CDN issue, the impact on other device classes has diminished significantly (from 50% to ~8% gap). This contradicts the assertion that the CDN 5xx errors are the sole cause of a uniform 50% impression loss across all affected devices."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1422,
+        "output": 214
+      },
+      "costUsd": 0.0039175,
+      "queries": [
+        "1 - (((sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"} offset 4m) or vector(0))) / clamp_min((sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}) or vector(0)) - (sum(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"} offset 4m) or vector(0)), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-30T21:38:42.149Z",
+      "durationMs": 0,
+      "output": {
+        "decision": "no remediation - hypothesis did not survive falsification",
+        "contradictions": [
+          "The hypothesis states that impression loss is 50% for all device classes on 'cdn-west'. The live probe 'other_device_classes_gap' reads 0.0828, which is a massive drop from the 50% level that was core to the diagnosis. This breaks the stated correlation between the CDN failure and its impact across all device classes."
+        ]
+      }
+    }
+  ],
+  "outcome": "no_action",
+  "costUsd": 0.012727450000000001,
+  "detectedAt": "2026-08-30T21:37:44.263Z",
+  "failureClass": "F08"
+}
