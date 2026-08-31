@@ -34,8 +34,14 @@ prometheus.remote_write "grafana_cloud" {
     }
     send_exemplars = true
   }
+  // `env` keeps two plants from colliding in one Grafana Cloud stack. Without
+  // it the local plant and the deployed VM ship identical metric names with
+  // identical labels, Prometheus treats them as ONE series with samples
+  // interleaved from two sources, and every rate over that series is nonsense -
+  // increase() over 10m read 649,890 where one plant produces about 2,000.
   external_labels = {
     plant = "adbreak",
+    env   = sys.env("ADBREAK_ENV") != "" ? sys.env("ADBREAK_ENV") : "local",
   }
 }
 

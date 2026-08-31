@@ -26,3 +26,9 @@ services:
   # host binding; the demo drives it over SSH.
   chaos-injector:
     ports: []
+
+  # Two plants must not share a metrics namespace. The deployed VM labels
+  # everything env="gcp"; a local checkout defaults to env="local".
+  alloy:
+    environment:
+      ADBREAK_ENV: gcp
