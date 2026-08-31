@@ -37,6 +37,16 @@ export const impressionGapOthers = (deviceClass: string, window = '4m'): string 
   gapExpr(`,device_class!="${deviceClass}"`, window);
 
 /**
+ * The gap across the whole plant, unscoped.
+ *
+ * The agent always reasons about a device class, but a settle check wants to
+ * know whether ANY inventory is being lost before it declares the plant fit to
+ * measure against. Passing an empty device class to impressionGap yields
+ * `device_class=""`, which matches nothing and reads as no data.
+ */
+export const impressionGapAll = (window = '4m'): string => gapExpr('', window);
+
+/**
  * The SLO. Note the `> 0` guard rather than an epsilon floor: when nothing was
  * expected in the window the honest answer is "no data", not a ratio in the
  * millions.

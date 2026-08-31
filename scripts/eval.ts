@@ -10,6 +10,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { scalar } from './q.js';
+import { impressionGapAll } from '../packages/agent/src/tools/metrics.js';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -174,9 +175,7 @@ async function settle(maxMs = 20 * 60_000): Promise<void> {
     ['sum(increase(adbreak_cdn_requests_total{status=~"5.."}[5m])) or vector(0)', (v) => (v ?? 1) === 0],
     ['sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)', (v) => (v ?? 1) === 0],
     [
-      // The agent's own definition — see agent/src/tools/metrics.ts.
-      '1 - (sum(increase(adbreak_beacon_fired_total{event="impression"}[4m])) / ' +
-        'clamp_min(sum(increase(adbreak_beacon_expected_total{event="impression"}[4m])), 1))',
+      impressionGapAll(),
       (v) => v !== null && Math.abs(v) < 0.05,
     ],
   ];

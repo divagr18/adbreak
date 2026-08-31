@@ -14,6 +14,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { scalar } from './q.js';
+import { impressionGapAll } from '../packages/agent/src/tools/metrics.js';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -107,12 +108,10 @@ async function reset(): Promise<void> {
  * ten, which matters when six scenarios each wait for it.
  */
 async function settle(maxMs = 12 * 60_000): Promise<void> {
-  // The agent's own definition of the gap - see agent/src/tools/metrics.ts.
-  // A settle check measuring something the agent never reads would be waiting
-  // for a condition that has no bearing on what it is about to do.
-  const gap =
-    '1 - (sum(increase(adbreak_beacon_fired_total{event="impression"}[4m])) / ' +
-    'clamp_min(sum(increase(adbreak_beacon_expected_total{event="impression"}[4m])), 1))';
+  // Imported, not restated. A settle check measuring something the agent never
+  // reads waits for a condition with no bearing on what it is about to do, and
+  // restating this PromQL as a string is exactly how the two drifted apart.
+  const gap = impressionGapAll();
   const deadline = Date.now() + maxMs;
   process.stdout.write('  settling');
   while (Date.now() < deadline) {

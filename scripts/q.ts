@@ -18,6 +18,23 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// The agent's own expressions, imported rather than restated. Duplicating this
+// PromQL as strings let the harness and the agent drift apart three times in
+// one session - most recently the settle checks were still computing the gap as
+// an offset delta hours after the agent had moved back to increase().
+import {
+  cdn5xx,
+  impressionGap,
+  impressionGapAll,
+  impressionGapOthers,
+  adsNoFillRate,
+  availUnfilledRate,
+  adsFallbackReady,
+  adsFillRatio,
+  gapByDeviceCdn,
+  rrr,
+  stitchErrors,
+} from '../packages/agent/src/tools/metrics.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -66,48 +83,25 @@ export async function scalar(expr: string): Promise<number | null> {
 
 const fmt = (v: number | null): string => (v === null ? 'no data' : v.toFixed(4));
 
-/**
- * The agent's own gap expression, over a whole number of 120s break cadences.
- *
- * increase() at a cadence-aligned window, not an offset delta: measured over
- * ten healthy samples at 4m, increase() deviated at most 0.045 while a delta hit
- * 0.250 twice, and increase() survives the counter resets a service restart
- * causes. See agent/src/tools/metrics.ts, which this must always match.
- */
-const gap = (selector: string, window: string): string =>
-  `1 - (sum(increase(adbreak_beacon_fired_total{event="impression"${selector}}[${window}])) / ` +
-  `clamp_min(sum(increase(adbreak_beacon_expected_total{event="impression"${selector}}[${window}])), 1))`;
-
-/** Keeps its offset delta: the series is published at zero on startup, so the
- *  offset side always exists, and a delta shows a fault from the first scrape. */
-const NOFILL_RATE =
-  '((sum(adbreak_ads_nofill_total) or vector(0)) - ' +
-  '(sum(adbreak_ads_nofill_total offset 5m) or vector(0))) / ' +
-  'clamp_min(sum(adbreak_ads_request_total) - sum(adbreak_ads_request_total offset 5m), 1)';
-
-const CDN_5XX = 'sum(increase(adbreak_cdn_requests_total{status=~"5.."}[5m])) or vector(0)';
 
 /** Is the plant quiet enough to measure against? */
 function healthChecks(): [string, string, (v: number | null) => boolean][] {
   return [
     [
       'RRR (15m)',
-      'sum(increase(adbreak_revenue_realized_usd_total[15m])) / ' +
-        '(sum(increase(adbreak_revenue_expected_usd_total[15m])) > 0)',
+      rrr(),
       (v) => v !== null && v > 0.9 && v < 1.02,
     ],
-    ['CDN 5xx (5m)', CDN_5XX, (v) => (v ?? 1) === 0],
-    [
-      'stitch errors (5m)',
-      'sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)',
-      (v) => (v ?? 1) === 0,
-    ],
-    ['no-fill rate (5m)', NOFILL_RATE, (v) => (v ?? 1) < 0.01],
-    ['pod seconds filled', 'avg(adbreak_ads_fill_ratio)', (v) => v !== null && v > 0.8],
+    ['CDN 5xx (5m)', cdn5xx(), (v) => (v ?? 1) === 0],
+    ['stitch errors (5m)', stitchErrors(), (v) => (v ?? 1) === 0],
+    ['no-fill rate', adsNoFillRate(), (v) => (v ?? 1) < 0.01],
+    ['avails unfilled', availUnfilledRate(), (v) => (v ?? 1) < 0.05],
+    ['pod seconds filled', adsFillRatio(), (v) => v !== null && v > 0.8],
     // 10m: five whole breaks, and the steadiest window measured. A settle
     // check that flaps on a healthy plant is how the last Gate D run sat in
     // its own wait loop for fifteen minutes.
-    ['impression gap, all devices', gap('', '10m'), (v) => v !== null && Math.abs(v) < 0.05],
+    // 10m: five whole breaks, the steadiest window measured.
+    ['impression gap, all devices', impressionGapAll('10m'), (v) => v !== null && Math.abs(v) < 0.05],
   ];
 }
 
@@ -142,22 +136,22 @@ async function health(): Promise<void> {
  */
 async function baseline(device: string): Promise<void> {
   const rows: [string, string][] = [
-    [`gap for ${device} (gap_is_real, needs > 0.4)`, gap(`,device_class="${device}"`, '4m')],
-    ['gap for others (scoped_not_global, needs < 0.1)', gap(`,device_class!="${device}"`, '4m')],
-    ['no-fill rate (fill_collapsed, needs > 0.5)', NOFILL_RATE],
-    ['cdn 5xx (delivery_healthy, needs == 0)', CDN_5XX],
-    ['ads fallback ready (needs == 1)', 'max(adbreak_ssai_ads_fallback_ready)'],
+    [`gap for ${device} (gap_is_real, needs > 0.4)`, impressionGap(device)],
+    ['gap for others', impressionGapOthers(device)],
+    ['avails unfilled (fill_collapsed, needs > 0.25)', availUnfilledRate()],
+    ['no-fill rate (corroborates F04)', adsNoFillRate()],
+    ['cdn 5xx (delivery_healthy, needs == 0)', cdn5xx()],
+    ['ads fallback ready (needs == 1)', adsFallbackReady()],
   ];
   for (const [name, expr] of rows) {
     console.log(`${name.padEnd(48)} ${fmt(await scalar(expr).catch(() => null))}`);
   }
 
   console.log('\nper device class:');
-  const byDevice =
-    '1 - (sum by (device_class) (increase(adbreak_beacon_fired_total{event="impression"}[4m])) / ' +
-    'clamp_min(sum by (device_class) (increase(adbreak_beacon_expected_total{event="impression"}[4m])), 1))';
-  for (const r of (await query(byDevice)).sort((a, b) => b.value - a.value)) {
-    console.log(`  ${(r.metric.device_class ?? '?').padEnd(10)} ${r.value.toFixed(4)}`);
+  // The agent's own slice table, grouped by device and cdn.
+  for (const r of (await query(gapByDeviceCdn())).sort((a, b) => b.value - a.value)) {
+    const label = `${r.metric.device_class ?? '?'}/${r.metric.cdn ?? '?'}`;
+    console.log(`  ${label.padEnd(20)} ${r.value.toFixed(4)}`);
   }
 }
 
