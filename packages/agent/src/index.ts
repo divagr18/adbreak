@@ -416,5 +416,20 @@ svc.app.get('/trace/:id', (req, res) => {
   res.type('html').send(renderRun(run));
 });
 
+/**
+ * An operator's agent must not die quietly.
+ *
+ * A lapsed MCP session took this process down mid-evaluation, and the only
+ * evidence was a stack trace in the container log and a scenario that recorded
+ * "no run". Whatever else goes wrong, it gets logged where the rest of the
+ * telemetry goes, and a background failure never takes the service with it.
+ */
+process.on('unhandledRejection', (err) => {
+  svc.log.error('unhandled rejection - the agent stays up', { err: String(err) });
+});
+process.on('uncaughtException', (err) => {
+  svc.log.error('uncaught exception - the agent stays up', { err: String(err) });
+});
+
 svc.log.info('agent started', { pollMs: POLL_MS, runDir: RUN_DIR });
 svc.start(Number(process.env.PORT ?? 3000));

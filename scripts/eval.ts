@@ -344,7 +344,33 @@ async function main(): Promise<void> {
   console.log('autonomous polling paused for the duration of this evaluation\n');
 
   const results: Result[] = [];
-  for (const [i, s] of SCENARIOS.entries()) results.push(await runScenario(s, i));
+  for (const [i, s] of SCENARIOS.entries()) {
+    try {
+      results.push(await runScenario(s, i));
+    } catch (err) {
+      // One scenario failing must not cost the other ten. A transport error
+      // killed this evaluation seven scenarios in and took the whole scoreboard
+      // with it; the six completed results were still sitting in memory,
+      // unwritten. Record the failure as a failure and carry on.
+      console.log(`  SCENARIO ERRORED: ${String(err)}`);
+      results.push({
+        scenario: s.name,
+        groundTruth: s.fault,
+        diagnosed: null,
+        stage: null,
+        runbook: null,
+        outcome: 'harness_error',
+        rcaCorrect: false,
+        runbookCorrect: false,
+        handledCorrectly: false,
+        falseRemediation: false,
+        injectToPickupS: null,
+        mttrS: null,
+        costUsd: 0,
+        runId: null,
+      });
+    }
+  }
   await reset();
   await post(`${AGENT}/admin/polling`, { enabled: true });
 

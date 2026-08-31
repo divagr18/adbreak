@@ -22,6 +22,40 @@ export async function mcp(): Promise<Client> {
   return c;
 }
 
+/**
+ * Every MCP call, with one reconnection attempt.
+ *
+ * The SSE session does not live forever. When it lapses the server answers
+ * `Invalid session ID` and, because this is the agent's only route to Grafana,
+ * that rejection reached the top level and killed the process mid-evaluation -
+ * the agent went blind and dead at the same moment, and the run after it
+ * recorded "no run" with no indication why.
+ *
+ * A dropped session is a transport event, not an incident: drop the cached
+ * client and reconnect once. If the second attempt fails the error is real and
+ * belongs to the caller.
+ */
+async function withMcp<T>(fn: (c: Client) => Promise<T>): Promise<T> {
+  try {
+    return await fn(await mcp());
+  } catch (err) {
+    const message = String(err);
+    const sessionLapsed =
+      message.includes('Invalid session ID') ||
+      message.includes('session') ||
+      message.includes('ECONNRESET') ||
+      message.includes('fetch failed');
+    if (!sessionLapsed) throw err;
+    try {
+      await client?.close();
+    } catch {
+      // Closing a transport that is already gone is not interesting.
+    }
+    client = null;
+    return await fn(await mcp());
+  }
+}
+
 function textOf(result: unknown): string {
   const content = (result as { content?: { text?: string }[] }).content ?? [];
   return content.map((c) => c.text ?? '').join('');
@@ -34,17 +68,18 @@ export interface PromSeries {
 
 /** Instant PromQL through MCP. Returns every series, not just the first. */
 export async function queryPrometheus(expr: string): Promise<PromSeries[]> {
-  const c = await mcp();
-  const res = await c.callTool({
-    name: 'query_prometheus',
-    arguments: {
-      datasourceUid: PROM_UID,
-      expr,
-      queryType: 'instant',
-      startTime: 'now',
-      endTime: 'now',
-    },
-  });
+  const res = await withMcp((c) =>
+    c.callTool({
+      name: 'query_prometheus',
+      arguments: {
+        datasourceUid: PROM_UID,
+        expr,
+        queryType: 'instant',
+        startTime: 'now',
+        endTime: 'now',
+      },
+    }),
+  );
   const parsed = JSON.parse(textOf(res)) as {
     data?: { metric?: Record<string, string>; value?: [number, string] }[];
   };
@@ -60,19 +95,19 @@ export async function scalar(expr: string): Promise<number | null> {
 }
 
 export async function queryLoki(logql: string, limit = 20): Promise<string[]> {
-  const c = await mcp();
-  const res = await c.callTool({
-    name: 'query_loki_logs',
-    arguments: { datasourceUid: process.env.LOKI_UID ?? 'grafanacloud-logs', logql, limit },
-  });
+  const res = await withMcp((c) =>
+    c.callTool({
+      name: 'query_loki_logs',
+      arguments: { datasourceUid: process.env.LOKI_UID ?? 'grafanacloud-logs', logql, limit },
+    }),
+  );
   const parsed = JSON.parse(textOf(res)) as { data?: { line?: string }[] };
   return (parsed.data ?? []).map((d) => d.line ?? '');
 }
 
 /** Write-back: the audit trail the agent leaves in the operator's own tool. */
 export async function createAnnotation(text: string, tags: string[]): Promise<void> {
-  const c = await mcp();
-  await c.callTool({ name: 'create_annotation', arguments: { text, tags } });
+  await withMcp((c) => c.callTool({ name: 'create_annotation', arguments: { text, tags } }));
 }
 
 export async function createIncident(
@@ -81,11 +116,12 @@ export async function createIncident(
   summary: string,
 ): Promise<string | null> {
   try {
-    const c = await mcp();
-    const res = await c.callTool({
-      name: 'create_incident',
-      arguments: { title, severity, roomPrefix: 'adbreak', status: 'active', summary },
-    });
+    const res = await withMcp((c) =>
+      c.callTool({
+        name: 'create_incident',
+        arguments: { title, severity, roomPrefix: 'adbreak', status: 'active', summary },
+      }),
+    );
     return textOf(res).slice(0, 400);
   } catch {
     // Grafana IRM may not be enabled on every stack; the annotation and the
@@ -95,7 +131,6 @@ export async function createIncident(
 }
 
 export async function listTools(): Promise<string[]> {
-  const c = await mcp();
-  const res = await c.listTools();
+  const res = await withMcp((c) => c.listTools());
   return res.tools.map((t) => t.name);
 }
