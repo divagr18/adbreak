@@ -165,6 +165,19 @@ service account — there is no credential file on the box — and that account 
 chaos injector is unreachable from the internet, because it writes the ground-truth
 ledger and nothing public should be able to.
 
+### One plant per Grafana stack
+
+The local plant and the deployed VM ship identical metric names with identical
+labels — `instance` is `beacon-collector:3000` in both, because the container
+name is the same inside each compose network. Run both against one Grafana Cloud
+stack and Prometheus treats them as a single series with samples interleaved
+from two independent counters, at which point every rate is nonsense.
+
+Alloy stamps `env` from `ADBREAK_ENV` (`local` by default, `gcp` on the VM) so
+the two no longer collide. Even so, stop one plant's Alloy while measuring the
+other: the agent's own queries do not filter on `env`, so with both running they
+would sum two plants together.
+
 ### Scope decisions, noted rather than hidden
 
 - The CDN tier is a thin TypeScript reverse proxy with fault-injection rules, not Envoy.
