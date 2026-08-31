@@ -7,30 +7,27 @@
 /**
  * Share of billable impressions that never arrived, over a window.
  *
- * Two properties here were chosen from measurement on a settled plant, not
- * from reasoning - an earlier round of reasoning about this got it wrong twice.
+ * Both properties were settled by measurement on a settled plant, after
+ * reasoning about them got it wrong twice in opposite directions.
  *
- * First, an exact counter delta rather than `increase()`. increase()
- * extrapolates to the window edges, which is fine for smooth counters and
- * wrong for these: impressions arrive in a burst every 120s. Sampled ten times
- * on a healthy plant, increase() never once read zero, drifting between -0.41
- * and +0.22; the delta form read exactly zero in five of eight samples.
+ * The window must be a whole multiple of the 120s break cadence. Over seven
+ * healthy samples 4m ranged 0.009 and 10m ranged 0.025, while 3m ranged 0.759
+ * and 5m ranged 0.405: a partial break at the edge contributes its expectations
+ * before its impressions land. The original 3m precondition window was the
+ * worst available choice.
  *
- * Second, the window must be a whole multiple of the 120s break cadence.
- * Measured over seven samples with nothing wrong: 4m ranged 0.009 and 10m
- * ranged 0.025, while 3m ranged 0.759 and 5m ranged 0.405. A partial break at
- * the window edge contributes its expectations before its impressions land.
- * The old 3m precondition window was the worst available choice.
- *
- * The `or vector(0)` guards matter after a restart: a bare subtraction against
- * a series that did not exist one window ago yields no data, and a null gap
- * reads as "no fault" - which would silently block a correct remediation.
+ * At that window, `increase()` beats an exact offset delta - which is the
+ * reverse of the 3m result that briefly made this a delta. At 3m the delta read
+ * exactly zero where increase() drifted, so it was adopted; then the window
+ * moved to 4m and the premise was never re-tested. Measured there over ten
+ * samples increase() deviated at most 0.045 while the delta hit 0.250 twice,
+ * because the in-flight break that skews a delta is exactly what increase()'s
+ * extrapolation smooths. increase() also survives a counter reset, which a bare
+ * subtraction cannot: after a service restart the delta read -1999 and +215.
  */
 const gapExpr = (selector: string, window: string): string =>
-  `1 - (((sum(adbreak_beacon_fired_total{event="impression"${selector}}) or vector(0)) - ` +
-  `(sum(adbreak_beacon_fired_total{event="impression"${selector}} offset ${window}) or vector(0))) / ` +
-  `clamp_min((sum(adbreak_beacon_expected_total{event="impression"${selector}}) or vector(0)) - ` +
-  `(sum(adbreak_beacon_expected_total{event="impression"${selector}} offset ${window}) or vector(0)), 1))`;
+  `1 - (sum(increase(adbreak_beacon_fired_total{event="impression"${selector}}[${window}])) / ` +
+  `clamp_min(sum(increase(adbreak_beacon_expected_total{event="impression"${selector}}[${window}])), 1))`;
 
 export const impressionGap = (deviceClass: string, window = '4m'): string =>
   gapExpr(`,device_class="${deviceClass}"`, window);
@@ -95,12 +92,9 @@ export const availSignalChain = (window = '10m'): string =>
   `sum(increase(adbreak_avail_signaled_total[${window}])) - sum(increase(adbreak_avail_manifested_total[${window}]))`;
 
 /** Gap broken out by device x cdn — the slice that localises F07. */
-/** The slice table the agent localises a fault from. Same delta, grouped. */
 export const gapByDeviceCdn = (window = '4m'): string =>
-  `1 - ((sum by (device_class, cdn) (adbreak_beacon_fired_total{event="impression"}) - ` +
-  `sum by (device_class, cdn) (adbreak_beacon_fired_total{event="impression"} offset ${window})) / ` +
-  `clamp_min(sum by (device_class, cdn) (adbreak_beacon_expected_total{event="impression"}) - ` +
-  `sum by (device_class, cdn) (adbreak_beacon_expected_total{event="impression"} offset ${window}), 1))`;
+  `1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event="impression"}[${window}])) / ` +
+  `clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event="impression"}[${window}])), 1))`;
 
 /** Slate seconds per second — how fast unsold inventory is accumulating. */
 export const slateSecondsRate = (window = '2m'): string =>
