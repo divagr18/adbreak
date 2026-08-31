@@ -70,25 +70,20 @@ export const adsFillRatio = (): string => `avg(adbreak_ads_fill_ratio)`;
 /**
  * Fraction of ad requests answered with an empty VAST. Zero on a healthy plant.
  *
- * Window is 2m, not 5m, and that is a diagnosis-critical choice.
+ * increase() over a cadence-aligned window, like the impression gap and for the
+ * same reasons. As a 2m offset delta this read 1 at the hypothesis step and 0 at
+ * the falsification step twenty-two seconds later, with a total no-fill running
+ * continuously throughout - and the falsifier, reasoning correctly from those
+ * numbers, refuted a correct F04.
  *
- * ads_fill_ratio is a gauge: when the ad server stops filling, it collapses to
- * zero instantly. This is a windowed rate, so over 5m a TOTAL no-fill still
- * reads only 0.33 after 100 seconds. Presented side by side, the model
- * reasonably weights the signal that already looks extreme and calls a total
- * no-fill "underfill" - it diagnosed F09 instead of F04 twice for exactly this
- * reason. Two minutes is one whole break's worth of ad requests, around 200
- * samples, and reaches the true rate while the incident is still young.
+ * It is corroboration, not the defining signal. avail_unfilled_rate is what says
+ * inventory is going unsold, and ads_latency_p99 says whether the cause is empty
+ * responses or late ones. See METRIC_SEMANTICS in run.ts.
  */
-export const adsNoFillRate = (window = '2m'): string =>
-  // An exact counter delta, for the same reason as the impression gap:
-  // increase() extrapolates, and needs two points in the window before it says
-  // anything useful. The ads service publishes this series at zero on startup
-  // so the offset side always exists, which is what makes a fault visible from
-  // the first scrape after it begins rather than two minutes later.
-  `((sum(adbreak_ads_nofill_total) or vector(0)) - ` +
-  `(sum(adbreak_ads_nofill_total offset ${window}) or vector(0))) / ` +
-  `clamp_min(sum(adbreak_ads_request_total) - sum(adbreak_ads_request_total offset ${window}), 1)`;
+export const adsNoFillRate = (window = '4m'): string =>
+  `sum(increase(adbreak_ads_nofill_total[${window}])) / ` +
+  `clamp_min(sum(increase(adbreak_ads_request_total[${window}])), 1)`;
+
 export const availSignalChain = (window = '10m'): string =>
   `sum(increase(adbreak_avail_signaled_total[${window}])) - sum(increase(adbreak_avail_manifested_total[${window}]))`;
 
@@ -141,17 +136,15 @@ export const gapScopeRatio = (deviceClass: string, window = '4m'): string =>
 /**
  * Share of avails the stitcher could not fill, by any cause.
  *
- * This, not the ad server's own no-fill counter, is what "the ad server has
- * stopped returning usable pods" actually means. On an F03 latency spike the
- * ad server answers every request and its no-fill counter never moves - the
- * responses simply arrive after the manifest deadline and are discarded. Only
- * the stitcher knows an avail went out empty, and only that covers F03 and F04
- * alike.
+ * The primary evidence that ad inventory is going unsold, and the only signal
+ * that covers every way it happens: an empty VAST (F04), a response that missed
+ * the manifest deadline (F03), or an error. The ad server's own no-fill counter
+ * never moves during a latency spike, because it does answer - just too late.
+ *
+ * increase() over a cadence-aligned window, for the stability and reset-safety
+ * reasons documented on the impression gap above.
  */
-export const availUnfilledRate = (window = '2m'): string =>
-  `((sum(adbreak_avail_unfilled_total) or vector(0)) - ` +
-  `(sum(adbreak_avail_unfilled_total offset ${window}) or vector(0))) / ` +
-  `clamp_min(((sum(adbreak_avail_decided_total) or vector(0)) - ` +
-  `(sum(adbreak_avail_decided_total offset ${window}) or vector(0))) + ` +
-  `((sum(adbreak_avail_unfilled_total) or vector(0)) - ` +
-  `(sum(adbreak_avail_unfilled_total offset ${window}) or vector(0))), 1)`;
+export const availUnfilledRate = (window = '4m'): string =>
+  `sum(increase(adbreak_avail_unfilled_total[${window}])) / ` +
+  `clamp_min(sum(increase(adbreak_avail_unfilled_total[${window}])) + ` +
+  `sum(increase(adbreak_avail_decided_total[${window}])), 1)`;

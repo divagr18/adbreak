@@ -1,0 +1,198 @@
+{
+  "runId": "a80bcd04",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788168260822",
+    "channel": "sports-1",
+    "region": "eu",
+    "deviceClass": "android",
+    "startedAt": "2026-08-31T09:23:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-31T09:24:21.178Z",
+      "durationMs": 31228,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "condition",
+          "stitch",
+          "play",
+          "beacon"
+        ],
+        "affectedDimensions": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": null
+        },
+        "reasoning": "The incident is critical because the Revenue Realization Ratio (RRR) is 0, indicating a complete loss of revenue, and the impression gap is a severe 66.7%. The problem is systemic, affecting all device classes (as 'impression_gap_affected' for Android and 'impression_gap_others' are both 66.7%). Therefore, 'deviceClass' and 'region' are null, suggesting a widespread impact not confined to the incident's specified dimensions. The 'decide' stage appears healthy, with 0% unfilled avails and an 87% ad pod fill rate. No CDN 5xx errors or explicit stitching errors are reported. This indicates that ads are being decided and available for delivery. The large impression gap, despite healthy decisioning, strongly suggests an issue in the later stages that prevent ads from being played or impressions from being beaconed. Suspected stages include 'condition' (potentially malforming manifests), 'stitch' (subtle issues not captured by 'stitch_errors' leading to unplayable streams), 'play' (client-side players failing to render ads), or 'beacon' (failure to report impressions)."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 1060,
+        "output": 321
+      },
+      "costUsd": 0.0011205,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"android\"}[4m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"android\"}[4m])), 1))",
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"android\"}[4m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"android\"}[4m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "((sum(adbreak_ads_nofill_total) or vector(0)) - (sum(adbreak_ads_nofill_total offset 2m) or vector(0))) / clamp_min(sum(adbreak_ads_request_total) - sum(adbreak_ads_request_total offset 2m), 1)",
+        "((sum(adbreak_avail_unfilled_total) or vector(0)) - (sum(adbreak_avail_unfilled_total offset 2m) or vector(0))) / clamp_min(((sum(adbreak_avail_decided_total) or vector(0)) - (sum(adbreak_avail_decided_total offset 2m) or vector(0))) + ((sum(adbreak_avail_unfilled_total) or vector(0)) - (sum(adbreak_avail_unfilled_total offset 2m) or vector(0))), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-31T09:24:52.406Z",
+      "durationMs": 12868,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "impression_gap_affected",
+          "impression_gap_others",
+          "cdn_5xx",
+          "stitch_errors",
+          "ads_latency_p99",
+          "ads_pod_seconds_filled",
+          "ads_nofill_rate",
+          "avail_unfilled_rate",
+          "signal_chain_divergence",
+          "revenue_leak_usd"
+        ],
+        "findings": [
+          "A significant revenue leak of 28.53 USD is observed with a Realized Revenue Rate (RRR) of 0, indicating a complete revenue loss for this incident.",
+          "There is a very high impression gap (approximately 66.7%) for both affected (Android) and other device classes, meaning a large proportion of expected ad impressions are not being fired or tracked.",
+          "Ad decisioning is healthy: ads_latency_p99 is low (0.199s), ads_pod_seconds_filled is high (87.4%), and ads_nofill_rate is 0, indicating ads are being found and decisioned efficiently.",
+          "Ad stitching is healthy: stitch_errors is 0.",
+          "CDN delivery appears healthy: cdn_5xx errors are 0, suggesting no issues with content delivery from the CDN.",
+          "Ad availability and cue signalling seem healthy: avail_unfilled_rate is 0, meaning ad avails are being populated.",
+          "The signal_chain_divergence metric is null, providing no information about potential discrepancies between signaled and manifested avails."
+        ],
+        "conclusion": "The data indicates a severe issue at the very end of the ad-insertion signal chain: either ads are not playing on the client, or impression beacons are not being successfully sent or received. The high impression gap points directly to a problem in client-side playback or impression tracking, rather than issues with ad decisioning, ad stitching, or CDN delivery, which all appear healthy. Therefore, the revenue loss is attributable to a breakdown in the final delivery and impression registration within the signal chain."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 1012,
+        "output": 475
+      },
+      "costUsd": 0.0014911,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-31T09:24:52.406Z",
+      "durationMs": 12868,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [
+          "Analyzed the 'gap_by_device_and_cdn' data to identify impression loss across device classes and CDNs."
+        ],
+        "findings": [
+          "All device classes (android, firetv, ios, roku, smarttv, web) are losing a significant fraction of impressions (0.4643).",
+          "All CDNs (cdn-east, cdn-west) are losing a significant fraction of impressions (0.4643).",
+          "Every combination of device_class and CDN listed shows an identical and high fraction of impressions lost (0.4643).",
+          "There are no healthy slices in this breakdown where fraction_of_impressions_lost is 0.0 or near zero."
+        ],
+        "conclusion": "The fault is widespread, affecting all device classes and all CDNs uniformly. It is not scoped to a specific device class, nor to a specific CDN, nor to a particular combination of both, but rather appears to be a more general issue impacting all traffic regardless of these dimensions."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 784,
+        "output": 251
+      },
+      "costUsd": 0.0008626999999999999,
+      "queries": [
+        "1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[4m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[4m])), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-31T09:25:05.274Z",
+      "durationMs": 33341,
+      "output": {
+        "failureClass": "F07",
+        "stage": "beacon",
+        "cause": "A systemic failure in the impression beacon collection stage. All upstream systems (decisioning, stitching, delivery) are healthy, but there is a uniform and high rate of impression loss across all device classes and CDNs, indicating that beacons are not being successfully processed.",
+        "confidence": 1,
+        "supportingEvidence": [
+          "impression_gap_affected: 0.6666651851851851",
+          "impression_gap_others: 0.6666651851851852",
+          "The impression loss of ~0.46 is identical across all device classes and CDNs.",
+          "ads_nofill_rate: 0",
+          "avail_unfilled_rate: 0",
+          "cdn_5xx: 0"
+        ],
+        "scope": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": "eu"
+        },
+        "predictedSignature": "High impression loss across all device classes and CDNs, while all upstream metrics (ad decisioning, fill, delivery) remain healthy."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2841,
+        "output": 281
+      },
+      "costUsd": 0.006361250000000001
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-31T09:25:38.615Z",
+      "durationMs": 16409,
+      "output": {
+        "survived": false,
+        "testsAttempted": [
+          "Test for F07: Is the failure isolated to a single device class?"
+        ],
+        "contradictions": [
+          "The hypothesis identifies the failure class as F07, which is defined as a 'beacon blackhole at the CDN edge for one device class'. However, the hypothesis's own supporting evidence and the provided 'dimensional_slice' findings state the impression loss is high and uniform across ALL device classes. The live probe 'other_device_classes_gap' is 0.486, confirming the fault is not isolated. This directly contradicts the definition of an F07 failure."
+        ],
+        "verdict": "The hypothesis is refuted. The selected failure class F07 is incorrect because its definition requires the fault to be scoped to a single device class, whereas all evidence indicates a global impact across all devices."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1923,
+        "output": 200
+      },
+      "costUsd": 0.00440375,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"android\"}[4m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"android\"}[4m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-31T09:25:55.024Z",
+      "durationMs": 0,
+      "output": {
+        "decision": "no remediation - hypothesis did not survive falsification",
+        "contradictions": [
+          "The hypothesis identifies the failure class as F07, which is defined as a 'beacon blackhole at the CDN edge for one device class'. However, the hypothesis's own supporting evidence and the provided 'dimensional_slice' findings state the impression loss is high and uniform across ALL device classes. The live probe 'other_device_classes_gap' is 0.486, confirming the fault is not isolated. This directly contradicts the definition of an F07 failure."
+        ]
+      }
+    }
+  ],
+  "outcome": "no_action",
+  "costUsd": 0.0142393,
+  "detectedAt": "2026-08-31T09:24:21.178Z",
+  "failureClass": "F07"
+}
