@@ -615,40 +615,84 @@ All nine steps, budget-conscious:
 
 ### Phase D — the twist, then breadth (Days 11–12, Sep 6–7)
 
-> **Status (29 Aug): Gate C passed 14/14 on the live plant.**
-> MTTD to remediation 83.7s, to verified recovery 144.9s, $0.0193 per incident,
-> zero false remediations across the control window. The watchdog is verified
-> against the live agent, F03/F04 map to `rb-ads-failover`, and the T2 approval
-> loop is closed: a held plan can be approved from its own trace page, and
-> approval re-measures the preconditions against live telemetry before it
-> executes anything.
+> **Status (31 Aug): both gates pass on the same build.**
 >
-> Gates B and C each failed several times before passing, and **almost every
-> failure was in the instrument rather than in the system**. That pattern is
-> the most useful thing this phase produced:
-> - **Do not verify recovery on a sliding window — it still contains the
->   incident.** The 2m impression gap could not fall below 5% until the
->   blackholed break aged out, up to 240s against a 150s timeout, so the agent
->   rolled back a fix that had actually worked. An earlier pass at 110.7s was
->   partly luck: that remediation happened to land mid-break. Verification now
->   baselines the counters when the fix lands and judges the **delta since**.
-> - **A metric that cannot answer the question will be used to answer it
->   anyway.** `adbreak_ads_fill_ratio` is pod *seconds* over avail seconds, so a
->   healthy 28s pod in a 32s avail reads 0.875 forever. Nothing reported whether
->   the ad server had returned an empty VAST. The agent diagnosed F07 correctly,
->   read 0.875 as a 12.5% no-fill, concluded the fault was upstream and refuted
->   itself. F04 now has its own signal, zero when healthy.
-> - **A check that does not assert what its name claims will pass while the
->   thing it names is broken.** Gate C's "revenue recovered while the fault was
->   still injected" only ever asserted that the fault was still injected. It
->   showed green through a run where nothing recovered at all.
-> - **MTTR has a floor set by the plant, not by the agent.** Recovery cannot be
->   observed before the next break runs, so with a 120s cadence the honest
->   bound is ~240s. Detect-to-remediate is the agent's real contribution and is
->   reported separately.
-> - **`increase()` over bursty counters is window-sensitive.** The same healthy
->   gap reads ~0.000 at 2m/3m/4m and −0.13 at 6m. Preconditions declare 3m and
->   are clean; worth knowing before trusting any single window.
+> ```
+> GATE C  14/14   detect->remediate 63.8s · ->verified 194.2s · $0.0222/incident · 0 false remediations
+> GATE D   7/7    watchdog kills stall/loop/runaway · healthy run survives · T2 held ·
+>                 human approval executes and verifies · F08 escalated unmapped
+> ```
+>
+> The T2 approval loop is closed: a held plan can be approved from its own trace
+> page, approval re-measures the preconditions against live telemetry first, and
+> refusing a stale plan is its own outcome rather than an error.
+>
+> **Gate C's verified-recovery figure moved from 144.9s to 194.2s, and that is
+> the number becoming true rather than a regression.** The old one depended on
+> the fix landing between ad breaks; landing mid-break, the identical
+> remediation failed. A fix cannot repair the break already in flight when it
+> arrives - those expectations are booked and those impressions are already lost
+> - so recovery is now measured from the first whole break after the fix, and is
+> bounded below by roughly two break cadences. That bound belongs to the plant.
+> Detect-to-remediate, which is what the agent controls, is 63.8s.
+>
+> ### What the gates actually found
+>
+> Getting here took eight Gate D runs and cost far more than writing the agent
+> did. Fifteen distinct defects, and the split is the most useful thing this
+> phase produced:
+>
+> | where | count |
+> |---|---|
+> | the harness judging the agent | 7 |
+> | instruments and calibration | 6 |
+> | the agent's own reasoning | 1 |
+> | my analysis of the above | 1 |
+>
+> Three separate times the agent did exactly the right thing and was scored as
+> failing: it remediated and then correctly declined to remediate again, and the
+> gate graded the second run; it stood down inside its own post-remediation
+> cooldown, and the gate called that a watchdog failure; it diagnosed F09 from a
+> no-fill rate that genuinely read zero, because the counter did not exist until
+> the fault created it.
+>
+> ### The lessons worth carrying
+>
+> - **A check that can pass for a reason other than the one it names is worse
+>   than no check.** Found five times. "Revenue recovered while the fault was
+>   still injected" asserted only that the fault was still injected, and showed
+>   green through a run where nothing recovered. A partial gate run printed
+>   "GATE D: PASSED".
+> - **Never measure a periodic plant over a window that cuts a break in half.**
+>   The same healthy gap read 0.009 at 4m and 0.759 at 3m. It bit three times -
+>   in verification, in the raw readings, and in a precondition - before it was
+>   recognised as one systemic property rather than three bugs.
+> - **Scoping is a comparison, so measure it as one.** An absolute threshold on
+>   the healthy slices blocked a correct remediation, because an in-flight break
+>   lifts every slice at once. A ratio cancels exactly that.
+> - **A statistic must not be draggable by the thing it exists to detect.** The
+>   stall rule was judged against a rolling p95, so every stall raised the bar
+>   for catching the next one: two earlier tests pushed the threshold to 726s and
+>   a 242s stall sailed through. The median cannot be dragged by its own tail.
+> - **A counter that only exists during a fault is invisible when it matters.**
+>   `adbreak_ads_nofill_total` was absent until the first no-fill, and an absent
+>   series reads as "none" rather than "no data".
+> - **A gauge and a windowed rate describing the same fault are not comparable
+>   evidence early in an incident.** Shown 0.00078 against 0.333 for one total
+>   no-fill, the model reasonably believed the extreme one and called F09.
+> - **Clearing a fault is not the plant being well**, and one healthy sample is
+>   not a settled plant. A recovering plant overshoots: impressions arrive for
+>   expectations booked during the outage, so the gap swings negative and RRR
+>   rises above 1 before returning.
+> - **The agent's only route to Grafana must be able to fail.** A lapsed MCP
+>   session killed the process mid-evaluation, and the scenario after it recorded
+>   "no run" with nothing to explain why.
+>
+> The one defect in the agent's own reasoning is worth naming precisely: the
+> falsification step refuted a correct diagnosis because its evidence had grown
+> stronger between steps, reading a no-fill rate that had climbed from 0.33 to
+> 0.5 as a contradiction. Probes are re-read live and a ramping fault makes its
+> own signal climb, so only a probe moving AGAINST the hypothesis refutes it.
 
 Strict priority order — stop wherever the clock stops:
 
