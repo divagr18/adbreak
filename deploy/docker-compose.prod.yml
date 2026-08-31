@@ -1,0 +1,28 @@
+# Production overrides for the single-VM deployment.
+#
+# Deliberately small: the deployed topology is the same one every gate was run
+# against, because a plant whose deployed shape differs from the tested shape is
+# a plant nobody has tested. Only three things change.
+services:
+  agent:
+    volumes:
+      # No credential file. On GCE the agent authenticates to Vertex through the
+      # VM's attached service account via the metadata server, so there is
+      # nothing to mount, leak or rotate.
+      - ./packages:/app/packages
+      - ./runbooks:/app/runbooks:ro
+      - ./agent-data:/agent-data
+      # No ./data mount, and there must never be one: that directory holds
+      # ground-truth.jsonl, the answer key the agent is graded against. The
+      # local ledger is not shipped to the VM either; the VM writes its own.
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: ''
+      GOOGLE_GENAI_USE_ENTERPRISE: 'true'
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-adbreak-hack-2026}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-us-central1}
+
+  # The chaos injector writes the ground-truth ledger. On a public box it must
+  # not be reachable from outside, so it keeps its container port and loses its
+  # host binding; the demo drives it over SSH.
+  chaos-injector:
+    ports: []

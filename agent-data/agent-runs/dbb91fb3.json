@@ -1,0 +1,191 @@
+{
+  "runId": "dbb91fb3",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788172948610",
+    "channel": "sports-1",
+    "region": "eu",
+    "deviceClass": "firetv",
+    "startedAt": "2026-08-31T10:33:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-31T10:42:29.188Z",
+      "durationMs": 15751,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "deliver",
+          "play",
+          "beacon"
+        ],
+        "affectedDimensions": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": null
+        },
+        "reasoning": "The Revenue Realization Rate is 0, indicating a complete failure to monetize. This is critical. The high volume of CDN 5xx errors (nearly 4000 in 5 minutes) points directly to issues in the 'deliver' stage, preventing ad creatives from being served. This in turn prevents ads from entering the 'play' stage and subsequently inhibits 'beacon' events for impression tracking. The impression gap is significant (around 22%) for both the reported 'firetv' device class and 'other' device classes, suggesting a widespread issue, not isolated to specific dimensions."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 989,
+        "output": 196
+      },
+      "costUsd": 0.0007867,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"firetv\"}[4m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"firetv\"}[4m])), 1))",
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"firetv\"}[4m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"firetv\"}[4m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "sum(increase(adbreak_ads_nofill_total[4m])) / clamp_min(sum(increase(adbreak_ads_request_total[4m])), 1)",
+        "sum(increase(adbreak_avail_unfilled_total[4m])) / clamp_min(sum(increase(adbreak_avail_unfilled_total[4m])) + sum(increase(adbreak_avail_decided_total[4m])), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-31T10:42:44.940Z",
+      "durationMs": 6445,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "impression_gap_affected",
+          "impression_gap_others",
+          "cdn_5xx",
+          "stitch_errors",
+          "ads_latency_p99",
+          "ads_pod_seconds_filled",
+          "ads_nofill_rate",
+          "avail_unfilled_rate",
+          "signal_chain_divergence",
+          "revenue_leak_usd"
+        ],
+        "findings": [
+          "A revenue leak of 35.87 USD is observed.",
+          "A significant impression gap exists, with 22.06% for affected devices (firetv) and 21.84% for other devices. This indicates a widespread issue preventing impressions from being delivered.",
+          "There are 3912.86 CDN 5xx errors, pointing to a severe problem in content delivery.",
+          "Ad stitching is healthy, with 0 stitch errors.",
+          "Ad decisioning latency (P99) is low at 0.199 seconds, indicating fast ad responses.",
+          "Ad pod fill rate is 87.5%, and the no-fill rate is 0, meaning ad decisioning is successfully filling avails.",
+          "Availability unfilled rate is 0, indicating all signalled avails are being decided upon and filled.",
+          "There is no data for signal chain divergence."
+        ],
+        "conclusion": "The data shows a significant impression gap and a high number of CDN 5xx errors. This points directly to a delivery issue, likely with the Content Delivery Network (CDN) or related infrastructure preventing ads from reaching the client. Ad decisioning, ad fill rates, and stitching are all healthy, ruling out these stages as the primary cause of the revenue loss."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 941,
+        "output": 406
+      },
+      "costUsd": 0.0012973,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-31T10:42:44.940Z",
+      "durationMs": 6445,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [],
+        "findings": [
+          "The following slices are experiencing significant impression loss (0.5): android on cdn-west, firetv on cdn-west, ios on cdn-west, roku on cdn-west, smarttv on cdn-west, web on cdn-west.",
+          "The following slices are healthy (0.0 impression loss): android on cdn-east, firetv on cdn-east, ios on cdn-east, roku on cdn-east, smarttv on cdn-east, web on cdn-east."
+        ],
+        "conclusion": "The fault is scoped to the 'cdn-west' CDN, affecting all device classes equally. 'cdn-east' is healthy across all device classes."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 737,
+        "output": 185
+      },
+      "costUsd": 0.0006836,
+      "queries": [
+        "1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[4m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[4m])), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-31T10:42:51.386Z",
+      "durationMs": 21171,
+      "output": {
+        "failureClass": "F08",
+        "stage": "deliver",
+        "cause": "Clients are failing to download ad segments due to a high rate of 5xx errors from the 'cdn-west' CDN.",
+        "confidence": 1,
+        "supportingEvidence": [
+          "A high rate of CDN 5xx errors (3912.86) is observed.",
+          "Impression loss is 50% for all device classes served by 'cdn-west'.",
+          "Impression loss is 0% for all device classes served by 'cdn-east'.",
+          "Upstream health is confirmed by zero stitch errors, zero avail unfilled rate, and normal ad pod fill seconds."
+        ],
+        "scope": {
+          "deviceClass": null,
+          "cdn": "cdn-west",
+          "region": null
+        },
+        "predictedSignature": "High cdn_5xx rate and high fraction_of_impressions_lost correlated with a specific CDN, while avail_unfilled_rate and ads_nofill_rate remain at zero."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2574,
+        "output": 247
+      },
+      "costUsd": 0.0056875
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-31T10:43:12.557Z",
+      "durationMs": 14740,
+      "output": {
+        "survived": true,
+        "testsAttempted": [
+          "F03",
+          "F04",
+          "F09"
+        ],
+        "contradictions": [],
+        "verdict": "The hypothesis could not be refuted. All live probe values are consistent with the F08 failure class as described. The primary signal `cdn_5xx` remains extremely high, while all upstream fill signals (`avail_unfilled_rate`, `ads_nofill_rate`, `ads_pod_seconds_filled`) remain at their healthy baseline values, confirming the fault is isolated to the delivery stage."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1757,
+        "output": 140
+      },
+      "costUsd": 0.00359625,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"firetv\"}[4m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"firetv\"}[4m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-31T10:43:27.297Z",
+      "durationMs": 0,
+      "output": {
+        "decision": "no runbook mapped to this failure class",
+        "failureClass": "F08"
+      }
+    }
+  ],
+  "outcome": "no_action",
+  "costUsd": 0.01205135,
+  "detectedAt": "2026-08-31T10:42:29.187Z",
+  "failureClass": "F08",
+  "tier": "T3"
+}

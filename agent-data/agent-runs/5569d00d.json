@@ -1,0 +1,203 @@
+{
+  "runId": "5569d00d",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788173546990",
+    "channel": "sports-1",
+    "region": "us-west",
+    "deviceClass": "smarttv",
+    "startedAt": "2026-08-31T10:33:10Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-31T10:52:27.345Z",
+      "durationMs": 16920,
+      "output": {
+        "severity": "major",
+        "suspectedStages": [
+          "deliver",
+          "play",
+          "beacon"
+        ],
+        "affectedDimensions": {
+          "deviceClass": "smarttv",
+          "cdn": null,
+          "region": "us-west"
+        },
+        "reasoning": "The impression gap for 'smarttv' (11.36%) is nearly double that of other device classes, directly indicating a significant revenue realization issue specific to smart TVs. Upstream stages like ad decisioning, fill rate, stitching, and CDN 5xx errors show no issues, suggesting ads are being successfully sourced and prepared. The problem manifests as a gap between expected and fired beacons, pointing strongly to client-side playback ('play') or beaconing ('beacon') failures, or a delivery issue ('deliver') specific to how smart TVs receive or process the ad streams. The $10.20 revenue leak in 15 minutes confirms the impact."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 976,
+        "output": 216
+      },
+      "costUsd": 0.0008328,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"smarttv\"}[4m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"smarttv\"}[4m])), 1))",
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"smarttv\"}[4m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"smarttv\"}[4m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "sum(increase(adbreak_ads_nofill_total[4m])) / clamp_min(sum(increase(adbreak_ads_request_total[4m])), 1)",
+        "sum(increase(adbreak_avail_unfilled_total[4m])) / clamp_min(sum(increase(adbreak_avail_unfilled_total[4m])) + sum(increase(adbreak_avail_decided_total[4m])), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-31T10:52:44.265Z",
+      "durationMs": 11474,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "impression_gap_affected",
+          "impression_gap_others",
+          "cdn_5xx",
+          "stitch_errors",
+          "ads_latency_p99",
+          "ads_pod_seconds_filled",
+          "ads_nofill_rate",
+          "avail_unfilled_rate",
+          "signal_chain_divergence",
+          "revenue_leak_usd"
+        ],
+        "findings": [
+          "A revenue leak of 10.21 USD is observed.",
+          "There is an 11.36% impression gap for the affected 'smarttv' device class, indicating expected impressions are not being fired. This is higher than the 6.29% gap for other device classes.",
+          "No CDN 5xx errors were observed, indicating healthy content delivery.",
+          "No ad stitching errors were observed, indicating successful ad insertion into streams.",
+          "The 99th percentile ad response latency is 199ms, which is generally acceptable for ad decisioning.",
+          "The ad pod fill rate is high at 87.5%, suggesting successful ad selection.",
+          "No ad no-fills occurred, meaning all ad requests were matched with an ad.",
+          "No availabilities went unfilled, indicating successful decisioning for all ad opportunities.",
+          "No data was available for signal chain divergence."
+        ],
+        "conclusion": "The data indicates a revenue loss directly attributable to an 11.36% impression gap specifically for the 'smarttv' device class, which is higher than other device classes. While ad decisioning, ad fill rates, stitching, and CDN delivery appear healthy with no errors or no-fills reported, the significant impression gap suggests a failure in client-side beaconing or impression tracking for the affected smart TVs. This points to an issue within the signal chain related to impression reporting or client-side playback, ruling out issues with ad decisioning, ad serving, or stitching as the primary cause of the revenue loss."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 928,
+        "output": 458
+      },
+      "costUsd": 0.0014234,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-31T10:52:44.265Z",
+      "durationMs": 11474,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [
+          "Query for impression loss by device class and CDN."
+        ],
+        "findings": [
+          "All reported 'fraction_of_impressions_lost' values are 0.0, indicating no impression loss.",
+          "All slices (combinations of device class and CDN) are healthy."
+        ],
+        "conclusion": "No fault found. The fault is scoped to neither a device class nor a CDN."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 727,
+        "output": 111
+      },
+      "costUsd": 0.0004956,
+      "queries": [
+        "1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[4m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[4m])), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-31T10:52:55.739Z",
+      "durationMs": 20555,
+      "output": {
+        "failureClass": "F07",
+        "stage": "beacon",
+        "cause": "Billable impressions are being lost for the smarttv device class despite healthy delivery and ad-fill signals. This indicates a failure at the beaconing stage, where the client fails to report the impression after playback.",
+        "confidence": 1,
+        "supportingEvidence": [
+          "impression_gap_affected is 0.1136, showing significant impression loss on the 'smarttv' device class.",
+          "avail_unfilled_rate is 0, confirming ad opportunities are being filled successfully by the stitcher.",
+          "cdn_5xx is 0, confirming healthy delivery from the CDN.",
+          "ads_latency_p99 is low (0.199s), ruling out ad decisioning latency.",
+          "stitch_errors are 0, indicating successful ad insertion."
+        ],
+        "scope": {
+          "deviceClass": "smarttv",
+          "cdn": null,
+          "region": "us-west"
+        },
+        "predictedSignature": "A high impression gap for a specific device class, with all other core metrics (avail_unfilled_rate, ads_latency_p99, cdn_5xx, stitch_errors) remaining healthy."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2527,
+        "output": 290
+      },
+      "costUsd": 0.00605875
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-31T10:53:16.294Z",
+      "durationMs": 23536,
+      "output": {
+        "survived": false,
+        "testsAttempted": [
+          "F04",
+          "F03",
+          "F09",
+          "F07"
+        ],
+        "contradictions": [
+          "The 'signal_chain' evidence branch states there is an 11.36% impression gap on the 'smarttv' device class, which is the primary basis for the F07 hypothesis.",
+          "The 'dimensional_slice' evidence branch, from the same investigation, explicitly states that its query for 'fraction_of_impressions_lost' found values of 0.0 for all device classes.",
+          "These two findings are in direct contradiction. A hypothesis of significant impression loss cannot be sustained when a primary data source from the same run reports zero impression loss."
+        ],
+        "verdict": "The hypothesis is refuted. The evidence presented is internally contradictory. The 'signal_chain' branch finding of an 11.36% impression gap is the sole basis for the hypothesis, but this is directly invalidated by the 'dimensional_slice' branch finding of 0.0% impression loss. The hypothesis cannot survive when its foundational evidence is shown to be unreliable by other data collected in the same investigation."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1767,
+        "output": 275
+      },
+      "costUsd": 0.00495875,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"smarttv\"}[4m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"smarttv\"}[4m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-31T10:53:39.830Z",
+      "durationMs": 0,
+      "output": {
+        "decision": "no remediation - hypothesis did not survive falsification",
+        "contradictions": [
+          "The 'signal_chain' evidence branch states there is an 11.36% impression gap on the 'smarttv' device class, which is the primary basis for the F07 hypothesis.",
+          "The 'dimensional_slice' evidence branch, from the same investigation, explicitly states that its query for 'fraction_of_impressions_lost' found values of 0.0 for all device classes.",
+          "These two findings are in direct contradiction. A hypothesis of significant impression loss cannot be sustained when a primary data source from the same run reports zero impression loss."
+        ]
+      }
+    }
+  ],
+  "outcome": "no_action",
+  "costUsd": 0.0137693,
+  "detectedAt": "2026-08-31T10:52:27.345Z",
+  "failureClass": "F07"
+}
