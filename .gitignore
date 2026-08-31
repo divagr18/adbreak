@@ -12,3 +12,4 @@ plant/encoder/source/*.mp4
 
 spike/node_modules/
 spike/events.jsonl
+.deploy-bundle.tar.gz

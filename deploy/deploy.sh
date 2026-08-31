@@ -20,6 +20,14 @@ VM="${VM_NAME:-adbreak}"
 SA="adbreak-agent"
 MACHINE="${MACHINE_TYPE:-e2-standard-4}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# On Windows these two tools disagree about paths: tar is a POSIX build and
+# treats a C: path as a remote host, while the scp binary gcloud shells out to
+# cannot read /tmp/... and will not expand a tilde in a remote destination. So
+# the same file is named twice, and the remote side is addressed from home.
+# Outside the repo: writing the bundle into the directory being archived makes
+# tar exit non-zero with "file changed as we read it", which set -e turns fatal.
+BUNDLE="$(dirname "${REPO_ROOT}")/adbreak-deploy-bundle.tar.gz"
+native() { cygpath -w "$1" 2>/dev/null || printf '%s' "$1"; }
 
 say() { printf '\n=== %s\n' "$*"; }
 
@@ -77,14 +85,14 @@ fi
 # against and must never be able to read.
 say "copying the repo (excluding node_modules, agent-data, data)"
 gcloud compute ssh "${VM}" --zone "${ZONE}" --tunnel-through-iap \
-  --command 'mkdir -p ~/adbreak' >/dev/null
+  --command 'mkdir -p adbreak' >/dev/null
 
 tar --exclude=node_modules --exclude=.git --exclude=agent-data --exclude=data \
-    --exclude=hls --exclude='*.log' \
-    -czf /tmp/adbreak.tar.gz -C "${REPO_ROOT}" .
-gcloud compute scp /tmp/adbreak.tar.gz "${VM}:~/adbreak.tar.gz" \
+    --exclude=hls --exclude=.deploy-bundle.tar.gz --exclude='*.log' \
+    -czf "${BUNDLE}" -C "${REPO_ROOT}" .
+gcloud compute scp "$(native "${BUNDLE}")" "${VM}:adbreak.tar.gz" \
   --zone "${ZONE}" --tunnel-through-iap
-gcloud compute scp "${REPO_ROOT}/.env" "${VM}:~/adbreak/.env" \
+gcloud compute scp "$(native "${REPO_ROOT}/.env")" "${VM}:adbreak/.env" \
   --zone "${ZONE}" --tunnel-through-iap
 
 say "building and starting the stack"
