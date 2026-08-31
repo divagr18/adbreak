@@ -38,25 +38,63 @@ try {
   svc.log.error('catalog load failed — realized revenue will not be priced', { err: String(err) });
 }
 
-/** Everything already booked, keyed by session|avail|pod position|creative|event.
- *  Position is part of the key because one pod may legitimately carry the same
- *  creative twice, and those are two separate billable impressions. */
-const seen = new Set<string>();
+/**
+ * Per-avail state, evicted once the avail is far enough in the past.
+ *
+ * Both the dedupe set and the stats used to grow without bound - one entry per
+ * session, avail, pod position, creative and event, forever. At 200 sessions
+ * and a break every two minutes that is well over a million strings a day, and
+ * this process was found holding 1.5 GB after 42 hours, with the edge
+ * intermittently failing to reach it. A component whose whole job is counting
+ * money must not fall over from having counted a lot of it.
+ *
+ * Keying the dedupe per avail rather than globally means eviction drops both at
+ * once. Every beacon for an avail arrives within about a minute of it, so
+ * retaining the last few dozen is far more history than correctness needs.
+ */
+const RETAIN_AVAILS = Number(process.env.RETAIN_AVAILS ?? 40);
 
 interface AvailStats {
   byEvent: Record<string, number>;
   byDeviceEvent: Record<string, Record<string, number>>;
   sessions: Set<string>;
+  /** Booked already, keyed by session|pod position|creative|event. Position is
+   *  part of the key because one pod may legitimately carry the same creative
+   *  twice, and those are two separate billable impressions. */
+  seen: Set<string>;
 }
 const stats = new Map<string, AvailStats>();
+
+const retainedAvails = svc.gauge({
+  name: 'adbreak_collector_retained_avails',
+  help: 'Avails currently held in memory for dedupe and per-break stats',
+  labels: [] as const,
+});
+
+/** Map preserves insertion order, so the oldest avail is simply the first key. */
+function evictOldAvails(): void {
+  while (stats.size > RETAIN_AVAILS) {
+    const oldest = stats.keys().next().value;
+    if (oldest === undefined) break;
+    stats.delete(oldest);
+  }
+  retainedAvails.set({}, stats.size);
+}
 
 function record(
   q: Record<string, string>,
   exemplar?: { traceId: string; spanId: string },
 ): boolean {
-  const key = `${q.session}|${q.availId}|${q.pos}|${q.creative}|${q.event}`;
-  if (seen.has(key)) return false;
-  seen.add(key);
+  const avail = stats.get(q.availId) ?? {
+    byEvent: {},
+    byDeviceEvent: {},
+    sessions: new Set<string>(),
+    seen: new Set<string>(),
+  };
+  // availId is the map key, so it need not be repeated inside the entry key.
+  const key = `${q.session}|${q.pos}|${q.creative}|${q.event}`;
+  if (avail.seen.has(key)) return false;
+  avail.seen.add(key);
 
   const entry = {
     ts: new Date().toISOString(),
@@ -114,12 +152,12 @@ function record(
     );
   }
 
-  const s = stats.get(q.availId) ?? { byEvent: {}, byDeviceEvent: {}, sessions: new Set() };
-  s.byEvent[q.event] = (s.byEvent[q.event] ?? 0) + 1;
-  const dev = (s.byDeviceEvent[q.device_class] ??= {});
+  avail.byEvent[q.event] = (avail.byEvent[q.event] ?? 0) + 1;
+  const dev = (avail.byDeviceEvent[q.device_class] ??= {});
   dev[q.event] = (dev[q.event] ?? 0) + 1;
-  s.sessions.add(q.session);
-  stats.set(q.availId, s);
+  avail.sessions.add(q.session);
+  stats.set(q.availId, avail);
+  evictOldAvails();
   return true;
 }
 
