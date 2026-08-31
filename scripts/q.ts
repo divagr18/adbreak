@@ -187,6 +187,10 @@ async function main(): Promise<void> {
     console.log('usage: npx tsx scripts/q.ts <promql | health | wait | baseline [device]>');
     return;
   }
+  // A query that cannot reach Grafana at all must not look like a healthy zero.
+  // The plant was down for an unknown stretch today and `docker compose ps |
+  // grep -v running` reported "all running", because the command had errored
+  // and an empty result read as nothing-wrong.
   if (arg === 'health') return health();
   if (arg === 'wait') return waitHealthy(Number(rest[0] ?? 3));
   if (arg === 'baseline') return baseline(rest[0] ?? 'roku');

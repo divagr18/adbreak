@@ -4,3 +4,4 @@ packages/**/*.ts text eol=lf
 spike/**/*.ts text eol=lf
 *.mp4 binary
 creatives/** binary
+deploy/*.sh text eol=lf

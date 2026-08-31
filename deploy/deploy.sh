@@ -92,8 +92,8 @@ gcloud compute ssh "${VM}" --zone "${ZONE}" --tunnel-through-iap --command '
   set -e
   cd ~/adbreak
   tar xzf ~/adbreak.tar.gz
-  # data/ is deliberately not shipped: it holds this machine's ground-truth
-  # ledger, the answer key the agent is graded against. The VM writes its own as
+  # data/ is deliberately not shipped: it holds the ground-truth ledger, which
+  # is the answer key the agent is graded against. The VM writes its own as
   # chaos is injected there. The directory must exist for the collector and
   # injector mounts, but it starts empty.
   mkdir -p agent-data/agent-runs data
