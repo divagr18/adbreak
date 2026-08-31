@@ -157,6 +157,39 @@ const MIN_SAMPLES = Number(process.env.VERIFY_MIN_SAMPLES ?? 20);
  */
 const BREAK_CADENCE_MS = Number(process.env.BREAK_CADENCE_S ?? 120) * 1000;
 
+/**
+ * What the plant's numbers mean, stated once.
+ *
+ * Every step that reasons about metrics gets this same text. It used to live
+ * only in the hypothesis prompt, so the falsification step was second-guessing
+ * a diagnosis using a worse model of the metrics than the one that made it -
+ * and twice killed a correct diagnosis on that basis: once reading a healthy
+ * 0.875 pod-seconds ratio as "significant underfill", once reading a no-fill
+ * rate that had climbed as a contradiction. Two prompts that disagree about
+ * what a number means will disagree about what is wrong.
+ */
+const METRIC_SEMANTICS = [
+  'Read the fill signals correctly, because they mean different things.',
+  'ads_pod_seconds_filled is pod seconds over avail seconds. It sits at about',
+  '0.875 when everything is working, because a 28s pod fills a 32s avail. A value',
+  'near 0.875 is NORMAL and is not evidence of any fault; only a sustained drop',
+  'well below it indicates F09 duration underfill.',
+  'ads_nofill_rate is the fraction of ad requests answered with an empty VAST.',
+  'It is zero on a healthy plant and is the only direct evidence for F04.',
+  'A total no-fill drives pod seconds to zero as well, so use the discriminator',
+  'rather than the magnitudes: F04 means the ad server returned NOTHING, so',
+  'ads_nofill_rate is well above zero; F09 means it returned pods that were merely',
+  'too short, so ads_nofill_rate stays at zero while pod seconds fall.',
+  'avail_unfilled_rate is the share of ad breaks the stitcher could not fill by ANY',
+  'cause. It rises for F04 and also for F03, where the ad server answers every',
+  'request but too late for the manifest deadline - which is why an F03 latency',
+  'spike shows a high avail_unfilled_rate while ads_nofill_rate stays at zero.',
+  'Use ads_latency_p99 to tell those two apart.',
+  'Gauges and windowed rates are not comparable evidence early in an incident:',
+  'a gauge bottoms out at once while a rate is still climbing, so a larger number',
+  'is not automatically the stronger evidence.',
+].join(' ');
+
 const nowIso = () => new Date().toISOString();
 
 export interface PreconditionResult {
@@ -450,27 +483,7 @@ export async function runIncident(
         'Key discriminator: if delivery is healthy (no CDN 5xx, no stitch errors, normal',
         'ad latency, no-fill rate at zero) but billable impressions are missing for a',
         'specific slice, the failure is at the beacon stage, not upstream.',
-        'Read the two fill signals correctly, because they mean different things:',
-        'ads_nofill_rate is the fraction of ad requests answered with an empty VAST -',
-        'zero on a healthy plant, and the ONLY evidence for F04. ads_pod_seconds_filled',
-        'is pod seconds over avail seconds and sits at about 0.875 when everything is',
-        'working, because a 28s pod fills a 32s avail; a value near 0.875 is normal and',
-        'is NOT evidence of no-fill. Only a sustained drop well below that indicates F09',
-        'duration underfill.',
-        'The two are easy to confuse because a total no-fill drives pod seconds to zero',
-        'as well, so use the discriminator rather than the magnitudes: F04 means the ad',
-        'server returned NOTHING, so ads_nofill_rate is well above zero. F09 means it',
-        'returned pods that were merely too short, so ads_nofill_rate stays at zero',
-        'while pod seconds fall. If ads_nofill_rate is materially above zero the class',
-        'is F04, however extreme the pod-seconds figure looks - and note that',
-        'pod seconds is an instantaneous gauge while the no-fill rate is a windowed',
-        'rate that is still climbing early in an incident, so do not read the larger',
-        'number as the stronger evidence.',
-        'avail_unfilled_rate is the share of ad breaks the stitcher could not fill by',
-        'ANY cause. It rises for F04 and also for F03, where the ad server answers',
-        'every request but too late for the manifest deadline - which is why an F03',
-        'latency spike shows a high avail_unfilled_rate while ads_nofill_rate stays at',
-        'zero. Use ads_latency_p99 to tell those two apart.',
+        METRIC_SEMANTICS,
         'Scope the fault to the narrowest dimensions the evidence supports.',
         'Return JSON only.',
       ].join(' '),
@@ -505,6 +518,11 @@ export async function runIncident(
         'For each competing failure class, name the signal that would have to be present',
         'if that class were the true cause, then check the probe values supplied.',
         'Refer to a class only by an id from that list, with its correct meaning.',
+        METRIC_SEMANTICS,
+        'A probe sitting at its healthy baseline is not evidence of anything. Before',
+        'calling any value a contradiction, check it against the baselines above -',
+        'a run was refuted once for a pod-seconds ratio of 0.875, which is exactly',
+        'what a healthy plant reads.',
         'The probes are re-read live, seconds to minutes after the hypothesis was',
         'formed, and every rate here is computed over a sliding window. A probe that',
         'has MOVED since the hypothesis quoted it is not by itself a contradiction:',
