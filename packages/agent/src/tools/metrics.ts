@@ -67,8 +67,9 @@ export const adsLatencyP99 = (window = '5m'): string =>
  */
 export const adsFillRatio = (): string => `avg(adbreak_ads_fill_ratio)`;
 
-/** Fraction of ad requests answered with an empty VAST. Zero on a healthy plant. */
 /**
+ * Fraction of ad requests answered with an empty VAST. Zero on a healthy plant.
+ *
  * Window is 2m, not 5m, and that is a diagnosis-critical choice.
  *
  * ads_fill_ratio is a gauge: when the ad server stops filling, it collapses to
