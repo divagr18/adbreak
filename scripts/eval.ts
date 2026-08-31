@@ -174,10 +174,9 @@ async function settle(maxMs = 20 * 60_000): Promise<void> {
     ['sum(increase(adbreak_cdn_requests_total{status=~"5.."}[5m])) or vector(0)', (v) => (v ?? 1) === 0],
     ['sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)', (v) => (v ?? 1) === 0],
     [
-      '1 - ((sum(adbreak_beacon_fired_total{event="impression"}) - ' +
-        'sum(adbreak_beacon_fired_total{event="impression"} offset 4m)) / ' +
-        'clamp_min(sum(adbreak_beacon_expected_total{event="impression"}) - ' +
-        'sum(adbreak_beacon_expected_total{event="impression"} offset 4m), 1))',
+      // The agent's own definition — see agent/src/tools/metrics.ts.
+      '1 - (sum(increase(adbreak_beacon_fired_total{event="impression"}[4m])) / ' +
+        'clamp_min(sum(increase(adbreak_beacon_expected_total{event="impression"}[4m])), 1))',
       (v) => v !== null && Math.abs(v) < 0.05,
     ],
   ];
@@ -225,7 +224,10 @@ async function runScenario(s: Scenario, index: number): Promise<Result> {
     alerts: [{ labels: { device_class: s.alertDevice, region: 'us-east', channel: 'sports-1' } }],
   });
 
-  const deadline = Date.now() + 6 * 60_000;
+  // Longer than the runbook's verification budget: one break cadence for the
+  // in-flight break plus up to 420s of polling, so a complete run is around
+  // nine minutes. A shorter wait records "no run" for a run still in progress.
+  const deadline = Date.now() + 15 * 60_000;
   let run: AgentRun | null = null;
   while (Date.now() < deadline) {
     await sleep(10_000);

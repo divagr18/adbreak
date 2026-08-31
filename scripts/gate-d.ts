@@ -107,11 +107,12 @@ async function reset(): Promise<void> {
  * ten, which matters when six scenarios each wait for it.
  */
 async function settle(maxMs = 12 * 60_000): Promise<void> {
+  // The agent's own definition of the gap - see agent/src/tools/metrics.ts.
+  // A settle check measuring something the agent never reads would be waiting
+  // for a condition that has no bearing on what it is about to do.
   const gap =
-    '1 - ((sum(adbreak_beacon_fired_total{event="impression"}) - ' +
-    'sum(adbreak_beacon_fired_total{event="impression"} offset 4m)) / ' +
-    'clamp_min(sum(adbreak_beacon_expected_total{event="impression"}) - ' +
-    'sum(adbreak_beacon_expected_total{event="impression"} offset 4m), 1))';
+    '1 - (sum(increase(adbreak_beacon_fired_total{event="impression"}[4m])) / ' +
+    'clamp_min(sum(increase(adbreak_beacon_expected_total{event="impression"}[4m])), 1))';
   const deadline = Date.now() + maxMs;
   process.stdout.write('  settling');
   while (Date.now() < deadline) {
@@ -135,8 +136,14 @@ async function settle(maxMs = 12 * 60_000): Promise<void> {
  * closed - and the gate then grades that follow-up instead of the run it
  * actually triggered. A healthy F07 remediation was scored as "blocked" this
  * way, and the verdict looked like a precondition bug rather than a harness one.
+ *
+ * The wait must also exceed the runbook's own verification budget. Verification
+ * sits out one break cadence for the in-flight break, then polls for up to 420s;
+ * with the rest of the pipeline that is around nine minutes. An eight-minute cap
+ * made the harness give up while the agent was still working and report "no run
+ * produced" for a run that was mid-verification.
  */
-async function triggerAndWait(device: string, maxMs = 8 * 60_000): Promise<AgentRun | null> {
+async function triggerAndWait(device: string, maxMs = 15 * 60_000): Promise<AgentRun | null> {
   // Clear the cooldown HERE, not in reset(). settle() sits for minutes between
   // the two, and the agent's own poller can remediate during that window and
   // re-arm the suppression - which silently swallowed the alert and reported
