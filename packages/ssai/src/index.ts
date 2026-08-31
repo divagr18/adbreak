@@ -12,6 +12,7 @@ startTracing('ssai');
 import { Router } from 'express';
 import {
   BEACON_EVENTS,
+  REGIONS,
   METRICS,
   contextFromTraceparent,
   inSpan,
@@ -148,6 +149,16 @@ function schedule(atMs: number, fn: () => void): void {
 
 const availDecided = svc.counter(METRICS.availDecided);
 const availUnfilled = svc.counter(METRICS.availUnfilled);
+// Publish every reason at zero before anything goes wrong. This is the same
+// trap the ads no-fill counter fell into: a series that only springs into
+// existence when the fault starts is absent for exactly as long as it takes
+// anyone to notice, and an absent series reads as "nothing wrong" rather than
+// "no data". It blocked every settle check until it was fixed here too.
+for (const region of REGIONS) {
+  for (const reason of ['no_fill', 'timeout', 'error']) {
+    availUnfilled.inc({ channel: CHANNEL, region, reason }, 0);
+  }
+}
 const slateSeconds = svc.counter(METRICS.slateSeconds);
 const stitchErrors = svc.counter(METRICS.stitchErrors);
 const manifestLatency = svc.histogram(METRICS.manifestLatency);
