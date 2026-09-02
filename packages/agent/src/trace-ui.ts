@@ -90,6 +90,7 @@ pre { background:var(--panel); border:1px solid var(--b-subtle); border-radius:6
   font:12.5px/1.55 var(--mono); color:var(--fg-2); }
 pre.q { color:var(--good); }
 
+.code { font:11px var(--mono); color:var(--fg-3); }
 .pill { display:inline-block; padding:1px 8px; border-radius:4px; font-size:11.5px;
   font-weight:500; border:1px solid var(--b); color:var(--fg-2); white-space:nowrap; }
 .pill.ok { color:var(--good); border-color:#1d3d2e; }
@@ -130,7 +131,7 @@ div.ev { padding-left:0; }
 /* A legend, collapsed by default so it costs one line until it is wanted.
    The states here are domain-specific - nobody arriving cold can be expected to
    know that no_action is a deliberate escalation rather than a failure. */
-.legend { margin-top:22px; border-top:1px solid var(--b-subtle); }
+.legend { margin:0 0 6px; border-bottom:1px solid var(--b-subtle); }
 .legend > summary { cursor:pointer; list-style:none; padding:11px 0; color:var(--fg-2);
   font-size:12.5px; display:flex; align-items:center; gap:8px; }
 .legend > summary::-webkit-details-marker { display:none; }
@@ -138,7 +139,7 @@ div.ev { padding-left:0; }
 .legend[open] > summary::before { content:"−"; }
 .legend > summary:hover { color:var(--fg); }
 .legend .cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr));
-  gap:0 40px; padding:4px 0 20px; }
+  gap:0 40px; padding:2px 0 18px; }
 .legend h4 { font-size:11px; color:var(--fg-3); font-weight:500; letter-spacing:.07em;
   text-transform:uppercase; margin:10px 0 8px; }
 .legend dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:5px 14px; align-items:baseline; }
@@ -154,6 +155,36 @@ const page = (title: string, body: string): string =>
   `<footer>AdBreak — an autonomous SRE agent whose SLO is revenue realization, not uptime. ` +
   `Diagnosis runs on Vertex AI Gemini through the ADK; every read of and write back to Grafana ` +
   `goes through the Grafana MCP server. <a href="${REPO}">Source</a>.</footer></div>`;
+
+/**
+ * What each failure class actually is, in words.
+ *
+ * F07 and its siblings are internal identifiers from the fault taxonomy. They
+ * are precise, they are what the runbooks and the ground-truth ledger key on,
+ * and they mean nothing whatsoever to someone reading this page. The code stays
+ * visible - it is how you would grep for the incident - but it is never the only
+ * thing shown.
+ */
+const FAILURE_NAMES: Record<string, string> = {
+  F01: 'the break was never signalled',
+  F02: 'the break marker was lost in packaging',
+  F03: 'the ad server answered too late to use',
+  F04: 'the ad server returned no ads',
+  F07: 'ads played, but nobody recorded them',
+  F08: 'the CDN was failing in one region',
+  F09: 'the ads were too short to fill the break',
+};
+
+/** What each runbook actually does, for the same reason as FAILURE_NAMES. */
+const RUNBOOK_NAMES: Record<string, string> = {
+  'rb-beacon-fallback': 'report the ads from the server instead of the player',
+  'rb-ads-failover': 'serve the last ads that worked, rather than nothing',
+};
+
+const runbookName = (id?: string): string => (id ? (RUNBOOK_NAMES[id] ?? id) : '');
+
+const failureName = (code?: string): string =>
+  code ? (FAILURE_NAMES[code] ?? code) : 'not yet identified';
 
 /** What an outcome means, in the words you would use to a colleague. */
 const OUTCOME_MEANING: Record<string, string> = {
@@ -207,8 +238,8 @@ function legend(): string {
           ['run', 'One incident, start to finish. Open it for every step, the PromQL issued and what came back.'],
           ['detected', 'When the revenue SLO alert was picked up. The agent confirms the leak is still live before engaging.'],
           ['device', 'The device class the loss was scoped to. Most faults hit one slice, not the whole channel.'],
-          ['cause', 'The failure class it settled on, graded against a ledger of what chaos actually did — which the agent cannot read.'],
-          ['runbook', 'The repair, chosen by a lookup table from the failure class. Never chosen by the model.'],
+          ['cause', 'Which link in the chain broke. Listed below, with the internal code the runbooks key on. Graded against a ledger of what actually went wrong, which the agent cannot read.'],
+          ['runbook', 'What it did to fix it, chosen by a lookup table from the cause. Never chosen by the model.'],
           ['unearned', 'Ad inventory signalled, served, and never billed in the fifteen minutes before detection. The money this exists to find.'],
           ['to fix', 'Detection to verified recovery. Bounded by the ad-break cadence rather than by the agent — a fix cannot prove itself until a whole break has run after it.'],
           ['cost', 'Vertex AI spend on the reasoning for that one incident.'],
@@ -225,6 +256,10 @@ function legend(): string {
           ['failed', 'The fix ran and recovery was not observed inside the runbook budget, so it was rolled back.'],
           ['killed by watchdog', 'Its own supervisor stopped the run for stalling, looping, or spending past its ceiling. The partial trace is kept.'],
         ])}
+        <h4>What can go wrong</h4>
+        ${dl(
+          Object.entries(FAILURE_NAMES).map(([code, name]) => [code, name] as [string, string]),
+        )}
         <h4>Blast radius</h4>
         ${dl([
           ['T1', 'One device class in one region. The agent may act alone.'],
@@ -270,8 +305,14 @@ export function renderRunList(runs: AgentRun[]): string {
         <td class="m"><a href="/trace/${esc(r.runId)}">${esc(r.runId)}</a></td>
         <td class="m">${when(r.detectedAt).slice(5)}</td>
         <td>${esc(r.incident.deviceClass)}</td>
-        <td class="m">${esc(r.failureClass ?? '—')}</td>
-        <td class="m">${esc(r.runbookId?.replace('rb-', '') ?? '—')}</td>
+        <td>${esc(failureName(r.failureClass))}${
+          r.failureClass ? ` <span class="code">${esc(r.failureClass)}</span>` : ''
+        }</td>
+        <td>${
+          r.runbookId
+            ? `${esc(runbookName(r.runbookId))} <span class="code">${esc(r.runbookId)}</span>`
+            : '<span class="code">none mapped</span>'
+        }</td>
         ${money}
         <td class="wide">${outcomePill(r.outcome)}</td>
         <td class="n">${secs(r.detectedAt, r.verifiedAt ?? r.remediatedAt)}</td>
@@ -294,11 +335,17 @@ export function renderRunList(runs: AgentRun[]): string {
     `<header>
        <div class="eyebrow">AdBreak · revenue SRE for live streaming</div>
        <h1>A detector for <span class="thin">money the stream never earned.</span></h1>
-       <p class="lede">Ad breaks fail quietly: the video keeps playing, every delivery dashboard
-         stays green, and impressions that should have been billed never arrive. This agent watches
-         for <strong>revenue that should have been realised and was not</strong>, finds the stage
-         responsible, and repairs it &mdash; or stops and asks, when the fix would touch every
-         viewer on the channel.</p>
+       <p class="lede">Ad breaks can fail without anyone noticing. The video keeps playing, every
+         dashboard looks healthy, and some ads simply never run — so the revenue they were meant to
+         earn quietly disappears.</p>
+       <p class="lede">A live stream builds its ad breaks as it goes. The broadcaster marks where a
+         break starts, an ad server decides what to play, the stream is rebuilt for each viewer with
+         those ads spliced in, and the player reports back what was actually watched. That last
+         report is the thing that gets billed. Break any link in the chain and the picture never
+         falters — the money just stops arriving.</p>
+       <p class="lede">This agent watches for revenue that should have shown up and didn't, works
+         out which link failed, and repairs it. <strong>If the fix would change what every viewer on
+         the channel sees, it stops and asks a person first.</strong></p>
      </header>
 
      <div class="stats">
@@ -314,13 +361,13 @@ export function renderRunList(runs: AgentRun[]): string {
 
      <section>
        <h2>Every incident</h2>
+       ${legend()}
        <table>
          <thead><tr><th class="m">run</th><th class="m">detected</th><th>device</th><th class="m">cause</th>
            <th class="m">runbook</th><th class="money">unearned</th><th class="wide">what it did</th>
            <th class="n">to fix</th><th class="n">cost</th></tr></thead>
          <tbody>${rows || '<tr><td colspan="9">No incidents yet — the agent is watching.</td></tr>'}</tbody>
        </table>
-       ${legend()}
      </section>`,
   );
 }
@@ -467,7 +514,7 @@ export function renderRun(r: AgentRun): string {
     `AdBreak — incident ${r.runId}`,
     `<header>
        <div class="eyebrow"><a href="/trace">all incidents</a> · ${esc(r.runId)}</div>
-       <h1>${esc(r.failureClass ?? 'Incident')} <span class="thin">on ${esc(
+       <h1>${esc(failureName(r.failureClass))}<span class="thin"> — on ${esc(
          r.incident.deviceClass,
        )} in ${esc(r.incident.region)}</span></h1>
        <p class="lede">${outcomePill(r.outcome)} &nbsp; ${esc(meaning)} &middot;
@@ -485,8 +532,20 @@ export function renderRun(r: AgentRun): string {
            ? stat('still leaking after', usd(after), after < (atRisk ?? 1) * 0.2 ? 'good' : 'money', 'same measure, after the fix')
            : ''
        }
-       ${stat('cause', esc(r.failureClass ?? '—'), '', 'graded against a ledger it cannot read')}
-       ${stat('runbook', esc(r.runbookId?.replace('rb-', '') ?? 'none'), '', r.runbookId ? 'chosen by lookup, never the model' : 'nothing mapped — escalated')}
+       ${stat(
+         'cause',
+         esc(r.failureClass ?? '—'),
+         'quiet',
+         esc(failureName(r.failureClass)) + ' · graded against a ledger it cannot read',
+       )}
+       ${stat(
+         'repair',
+         esc(r.runbookId ? runbookName(r.runbookId) : 'none'),
+         'quiet',
+         r.runbookId
+           ? `${esc(r.runbookId)} · chosen by lookup table, never by the model`
+           : 'nothing safe is mapped to this failure — escalated instead',
+       )}
        ${stat('blast radius', esc(r.tier ?? '—'), '', esc(r.verdict ?? ''))}
        ${stat('detect→remediate', secs(r.detectedAt, r.remediatedAt), '', 'the part the agent controls')}
        ${stat('detect→verified', secs(r.detectedAt, r.verifiedAt), '', 'bounded by the break cadence')}
@@ -502,8 +561,8 @@ export function renderRun(r: AgentRun): string {
        <p class="lede" style="margin:-8px 0 24px">Only the steps marked <em>llm</em> are a model.
          The runbook is chosen by a lookup table, the blast-radius gate is policy, and the
          watchdog is arithmetic.</p>
-       ${steps}
        ${legend()}
+       ${steps}
      </section>
      ${doc}`,
   );
