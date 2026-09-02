@@ -45,6 +45,22 @@ export function createService(component: string): ServiceContext {
   const app = express();
   app.use(express.json());
   const log = logger(component);
+
+  // A plant service must not die on a transport hiccup.
+  //
+  // The edge proxies upstream with fetch, and when a connection is severed
+  // mid-response undici's HTTP parser raises ERR_ASSERTION from inside Node -
+  // not a rejected promise anyone can catch, an uncaught exception that took
+  // the whole process down. The deployed CDN edge was dead for exactly that
+  // reason while its container still reported healthy.
+  //
+  // Registered once here so every service gets it rather than each remembering.
+  process.on('uncaughtException', (err) => {
+    log.error('uncaught exception - staying up', { err: String(err) });
+  });
+  process.on('unhandledRejection', (err) => {
+    log.error('unhandled rejection - staying up', { err: String(err) });
+  });
   // OpenMetrics, not the classic Prometheus text format: exemplars are only
   // exposed in OpenMetrics, and exemplars are what let a metric spike in
   // Grafana jump straight to the trace of the avail that caused it.
