@@ -1,0 +1,197 @@
+{
+  "runId": "8d6a5632",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788190077035",
+    "channel": "sports-1",
+    "region": "us-east",
+    "deviceClass": "web",
+    "startedAt": "2026-08-31T15:27:57.035Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-31T15:27:59.374Z",
+      "durationMs": 20421,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "decide",
+          "stitch",
+          "deliver",
+          "beacon"
+        ],
+        "affectedDimensions": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": "us-east"
+        },
+        "reasoning": "The Revenue Realization Ratio (RRR) is 0, indicating a complete failure to realize revenue, leading to a critical severity. The primary issue appears to be an extreme failure in ad decisioning, with `ads_pod_seconds_filled` near zero and `ads_nofill_rate` at 88.24%. This upstream failure in the `decide` stage leads directly to a lack of ads being available for `stitch`ing, `deliver`y, and `play`back, resulting in a high `impression_gap` (~67.6%) across *all* device classes, as shown by both `impression_gap_affected` (web) and `impression_gap_others` (non-web) being nearly identical. The ultimate impact is measured by the `beacon` stage's impression gap. The problem is observed in the `us-east` region, and affects all device classes."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 1014,
+        "output": 279
+      },
+      "costUsd": 0.0010017,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"web\"}[4m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"web\"}[4m])), 1))",
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"web\"}[4m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"web\"}[4m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "sum(increase(adbreak_ads_nofill_total[4m])) / clamp_min(sum(increase(adbreak_ads_request_total[4m])), 1)",
+        "sum(increase(adbreak_avail_unfilled_total[4m])) / clamp_min(sum(increase(adbreak_avail_unfilled_total[4m])) + sum(increase(adbreak_avail_decided_total[4m])), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-31T15:28:19.795Z",
+      "durationMs": 11346,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "impression_gap_affected",
+          "impression_gap_others",
+          "cdn_5xx",
+          "stitch_errors",
+          "ads_latency_p99",
+          "ads_pod_seconds_filled",
+          "ads_nofill_rate",
+          "avail_unfilled_rate",
+          "signal_chain_divergence",
+          "revenue_leak_usd"
+        ],
+        "findings": [
+          "A significant revenue loss of $13.51 USD is observed, accompanied by a substantial impression gap of 67.6% affecting both web and other device classes, indicating a widespread issue.",
+          "There are no CDN 5xx errors or stitching errors, ruling out delivery and stitching components as the direct cause of the revenue loss.",
+          "Ad server P99 latency is low at 199ms, suggesting that ad decisioning service responsiveness is not the primary bottleneck.",
+          "The ad pod fill rate is extremely low (0.006%), and the ad no-fill rate is very high (88.2%), clearly showing that ad decisioning is failing to find and serve ads for most opportunities.",
+          "Almost half (48.7%) of all avails remain unfilled, consistent with the high ad no-fill rate.",
+          "A signal chain divergence of 4.1 exists between signaled and manifested avails, pointing to potential issues in cue signalling or packaging stages preventing avails from reaching ad decisioning effectively."
+        ],
+        "conclusion": "The data demonstrates a critical failure within the ad-insertion signal chain. The primary issue lies with ad decisioning's inability to fill ad opportunities, resulting in an extremely low fill rate and high no-fill rate, compounded by a divergence in signaled vs. manifested avails. This rules out CDN, stitching, ad server latency, and billing as the primary cause of the revenue loss, confirming that the signal chain is not healthy."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 966,
+        "output": 443
+      },
+      "costUsd": 0.0013973,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-31T15:28:19.795Z",
+      "durationMs": 11346,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [
+          "gap_by_device_and_cdn"
+        ],
+        "findings": [
+          "Total impression loss (1.0) is observed for all combinations of device classes and CDNs.",
+          "Specifically, the following slices are experiencing total impression loss: device_class 'android' with cdn 'cdn-east', device_class 'firetv' with cdn 'cdn-east', device_class 'ios' with cdn 'cdn-east', device_class 'roku' with cdn 'cdn-east', device_class 'smarttv' with cdn 'cdn-east', device_class 'web' with cdn 'cdn-east', device_class 'android' with cdn 'cdn-west', device_class 'firetv' with cdn 'cdn-west', device_class 'ios' with cdn 'cdn-west', device_class 'roku' with cdn 'cdn-west', device_class 'smarttv' with cdn 'cdn-west', and device_class 'web' with cdn 'cdn-west'.",
+          "No healthy slices were identified as all reported a fraction_of_impressions_lost of 1.0."
+        ],
+        "conclusion": "The fault is scoped to both device classes and CDNs, indicating a widespread issue affecting all observed combinations of these dimensions."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 730,
+        "output": 286
+      },
+      "costUsd": 0.000934,
+      "queries": [
+        "1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[4m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[4m])), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-31T15:28:31.141Z",
+      "durationMs": 22246,
+      "output": {
+        "failureClass": "F04",
+        "stage": "decide",
+        "cause": "The ad server is returning empty VAST responses. This is indicated by a very high rate of unfilled avails (48.7%) while ad server response latency remains low and healthy (199ms).",
+        "confidence": 1,
+        "supportingEvidence": [
+          "avail_unfilled_rate is 0.4865548506644035",
+          "ads_latency_p99 is 0.199",
+          "ads_nofill_rate is 0.8823986111111112",
+          "ads_pod_seconds_filled is 0.00006377286988075843"
+        ],
+        "scope": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": null
+        },
+        "predictedSignature": "High `avail_unfilled_rate` with low `ads_latency_p99`."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2751,
+        "output": 262
+      },
+      "costUsd": 0.00605875
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-31T15:28:53.388Z",
+      "durationMs": 20736,
+      "output": {
+        "survived": false,
+        "testsAttempted": [
+          "F01",
+          "F02",
+          "F03",
+          "F08"
+        ],
+        "contradictions": [
+          "The hypothesis posits an F04 failure (empty VAST), which assumes avail opportunities are successfully delivered to the ad server. However, the `signal_chain_divergence` probe reads a high value of 5.12. This signal indicates a significant loss of avail opportunities upstream, before they can be processed by the stitcher and ad server. This points towards competing failure classes F01 (cue suppressed at playout) or F02 (cue dropped by the packager), directly contradicting the F04 diagnosis."
+        ],
+        "verdict": "The hypothesis that the failure is F04 (empty VAST) is refuted. While the signals for F04 (high `avail_unfilled_rate` with low latency) are present, the strong contradictory signal from `signal_chain_divergence` indicates that a large number of ad opportunities are not even reaching the ad decisioning stage, pointing to an upstream failure such as F01 or F02."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1955,
+        "output": 265
+      },
+      "costUsd": 0.00509375,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"web\"}[4m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"web\"}[4m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-31T15:29:14.124Z",
+      "durationMs": 0,
+      "output": {
+        "decision": "no remediation - hypothesis did not survive falsification",
+        "contradictions": [
+          "The hypothesis posits an F04 failure (empty VAST), which assumes avail opportunities are successfully delivered to the ad server. However, the `signal_chain_divergence` probe reads a high value of 5.12. This signal indicates a significant loss of avail opportunities upstream, before they can be processed by the stitcher and ad server. This points towards competing failure classes F01 (cue suppressed at playout) or F02 (cue dropped by the packager), directly contradicting the F04 diagnosis."
+        ]
+      }
+    }
+  ],
+  "outcome": "no_action",
+  "costUsd": 0.014485500000000002,
+  "detectedAt": "2026-08-31T15:27:59.374Z",
+  "failureClass": "F04"
+}

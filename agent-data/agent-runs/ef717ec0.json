@@ -1,0 +1,196 @@
+{
+  "runId": "ef717ec0",
+  "trigger": "grafana_alert",
+  "incident": {
+    "id": "inc-1788189100108",
+    "channel": "sports-1",
+    "region": "us-east",
+    "deviceClass": "roku",
+    "startedAt": "2026-08-31T15:11:40.108Z",
+    "rrr": 0
+  },
+  "steps": [
+    {
+      "step": "triage",
+      "kind": "llm",
+      "startedAt": "2026-08-31T15:11:40.572Z",
+      "durationMs": 19972,
+      "output": {
+        "severity": "critical",
+        "suspectedStages": [
+          "package",
+          "deliver",
+          "play",
+          "signal"
+        ],
+        "affectedDimensions": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": null
+        },
+        "reasoning": "Severity is critical due to a complete impression gap across all device classes (impression_gap_affected=1, impression_gap_others=1), resulting in 0% revenue realization. The key indicator is a positive `signal_chain_divergence`, which means ad breaks are detected by the `signal` stage but are not being included in the manifest by the `package` stage. This directly prevents ads from being delivered (`deliver`) and played (`play`), despite some ad pods being internally filled (`ads_pod_seconds_filled` > 0). The issue appears to be global, affecting all device classes and not limited to the reported region or CDN."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 938,
+        "output": 215
+      },
+      "costUsd": 0.0008189,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class=\"roku\"}[4m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class=\"roku\"}[4m])), 1))",
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}[4m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}[4m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))",
+        "avg(adbreak_ads_fill_ratio)",
+        "sum(increase(adbreak_ads_nofill_total[4m])) / clamp_min(sum(increase(adbreak_ads_request_total[4m])), 1)",
+        "sum(increase(adbreak_avail_unfilled_total[4m])) / clamp_min(sum(increase(adbreak_avail_unfilled_total[4m])) + sum(increase(adbreak_avail_decided_total[4m])), 1)",
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_revenue_expected_usd_total[15m])) - sum(increase(adbreak_revenue_realized_usd_total[15m]))"
+      ]
+    },
+    {
+      "step": "correlate:signal_chain",
+      "kind": "llm",
+      "startedAt": "2026-08-31T15:12:00.545Z",
+      "durationMs": 10315,
+      "output": {
+        "branch": "signal_chain",
+        "queriesIssued": [
+          "impression_gap_affected",
+          "impression_gap_others",
+          "cdn_5xx",
+          "stitch_errors",
+          "ads_latency_p99",
+          "ads_pod_seconds_filled",
+          "ads_nofill_rate",
+          "avail_unfilled_rate",
+          "signal_chain_divergence",
+          "revenue_leak_usd"
+        ],
+        "findings": [
+          "A revenue leak of USD 7.43 is observed.",
+          "There is a 100% impression gap for both affected (roku) and other devices, indicating no ad impressions were recorded.",
+          "CDN 5xx errors and stitching errors are zero, ruling out issues in content delivery or ad stitching.",
+          "Ad pod fill rates are high (approx. 87.5%) and no-fill rates are zero, suggesting the ad decisioning system is capable of serving ads when requested.",
+          "The P99 ad latency is null, potentially indicating ad requests are not being made or are not returning data.",
+          "Avail unfilled rate is zero, meaning avails are not going unfilled due to lack of ads.",
+          "There is a positive signal chain divergence (1.11), indicating that ad avails are being signaled but not manifesting in the playback manifest, leading to ads not being played."
+        ],
+        "conclusion": "The incident points to an issue in the packaging or manifest generation stage, where signaled ad avails are not being correctly included in the manifest, preventing players from initiating ad requests and firing impressions. This explains the complete lack of impressions despite a healthy ad decisioning system and no errors in stitching or CDN. Cue signalling is confirmed to be working as avails are being signaled."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 890,
+        "output": 404
+      },
+      "costUsd": 0.001277,
+      "queries": [
+        "sum(increase(adbreak_avail_signaled_total[10m])) - sum(increase(adbreak_avail_manifested_total[10m]))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "histogram_quantile(0.99, sum by (le) (rate(adbreak_ads_response_duration_seconds_bucket[5m])))"
+      ]
+    },
+    {
+      "step": "correlate:dimensional_slice",
+      "kind": "llm",
+      "startedAt": "2026-08-31T15:12:00.545Z",
+      "durationMs": 10316,
+      "output": {
+        "branch": "dimensional_slice",
+        "queriesIssued": [
+          "SELECT device_class, cdn, fraction_of_impressions_lost FROM gap_by_device_and_cdn WHERE incident_id = 'inc-1788189100108'"
+        ],
+        "findings": [
+          "All device classes (android, firetv, ios, roku, smarttv, web) are losing all impressions (fraction_of_impressions_lost: 1.0) on cdn-east.",
+          "All device classes (android, firetv, ios, roku, smarttv, web) are losing all impressions (fraction_of_impressions_lost: 1.0) on cdn-west.",
+          "No healthy slices were identified."
+        ],
+        "conclusion": "The fault is scoped to both device classes and CDNs, indicating a widespread problem affecting all observed dimensions simultaneously."
+      },
+      "model": "gemini-2.5-flash",
+      "tokens": {
+        "input": 730,
+        "output": 213
+      },
+      "costUsd": 0.0007515,
+      "queries": [
+        "1 - (sum by (device_class, cdn) (increase(adbreak_beacon_fired_total{event=\"impression\"}[4m])) / clamp_min(sum by (device_class, cdn) (increase(adbreak_beacon_expected_total{event=\"impression\"}[4m])), 1))"
+      ]
+    },
+    {
+      "step": "hypothesize",
+      "kind": "llm",
+      "startedAt": "2026-08-31T15:12:10.861Z",
+      "durationMs": 20854,
+      "output": {
+        "failureClass": "F02",
+        "stage": "package",
+        "cause": "Ad break cues are being signaled but dropped by the packager. They are not being written into the media manifest, which prevents players from ever seeing the ad avails and requesting ads.",
+        "confidence": 1,
+        "supportingEvidence": [
+          "signal_chain_divergence > 0",
+          "impression_gap_affected == 1",
+          "impression_gap_others == 1",
+          "ads_latency_p99 is null"
+        ],
+        "scope": {
+          "deviceClass": null,
+          "cdn": null,
+          "region": "us-east"
+        },
+        "predictedSignature": "Positive signal_chain_divergence with total impression loss across all slices and a null P99 ad latency."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 2536,
+        "output": 197
+      },
+      "costUsd": 0.0051400000000000005
+    },
+    {
+      "step": "falsify",
+      "kind": "llm",
+      "startedAt": "2026-08-31T15:12:31.715Z",
+      "durationMs": 17171,
+      "output": {
+        "survived": true,
+        "testsAttempted": [
+          "F01",
+          "F03",
+          "F04",
+          "F08",
+          "F09"
+        ],
+        "contradictions": [],
+        "verdict": "The hypothesis could not be refuted. The provided probes align perfectly with the predicted signature of F02 and contradict other potential failure classes."
+      },
+      "model": "gemini-2.5-pro",
+      "tokens": {
+        "input": 1736,
+        "output": 98
+      },
+      "costUsd": 0.00315,
+      "queries": [
+        "1 - (sum(increase(adbreak_beacon_fired_total{event=\"impression\",device_class!=\"roku\"}[4m])) / clamp_min(sum(increase(adbreak_beacon_expected_total{event=\"impression\",device_class!=\"roku\"}[4m])), 1))",
+        "sum(increase(adbreak_cdn_requests_total{status=~\"5..\"}[5m])) or vector(0)",
+        "sum(increase(adbreak_stitch_errors_total[5m])) or vector(0)"
+      ]
+    },
+    {
+      "step": "plan",
+      "kind": "code",
+      "startedAt": "2026-08-31T15:12:48.886Z",
+      "durationMs": 0,
+      "output": {
+        "decision": "no runbook mapped to this failure class",
+        "failureClass": "F02"
+      }
+    }
+  ],
+  "outcome": "no_action",
+  "costUsd": 0.0111374,
+  "detectedAt": "2026-08-31T15:11:40.572Z",
+  "failureClass": "F02",
+  "tier": "T2"
+}

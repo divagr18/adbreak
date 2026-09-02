@@ -649,41 +649,55 @@ export async function runIncident(
     run.outcome = recovered ? 'remediated' : 'failed';
 
     // --- 9. Document ------------------------------------------------------
-    t0 = begin('document');
-    const leak = await scalar(M.revenueLeakUsd('15m'));
-    const doc = await runStep({
-      name: 'document',
-      model: PRO,
-      schema: Documentation,
-      instruction: [
-        'Write the incident record for a revenue-loss incident that has just been',
-        'auto-remediated. Produce two things: a technical postmortem for the NOC',
-        '(timeline, root cause, evidence, action taken, verification) and a short CFO',
-        'brief in plain business language stating dollars at risk and dollars recovered.',
-        'Be specific and factual, use the numbers supplied, and do not speculate.',
-        'Return JSON only.',
-      ].join(' '),
-      input: {
-        incident,
-        hypothesis: hypothesis.output,
-        falsification: falsification.output,
-        plan,
-        executed,
-        recovered,
-        residualGap: gapNow,
-        revenueLeakUsd: leak,
-      },
-    });
-    step('document', 'llm', t0, doc.output, usageFields(doc.usage, costMul));
-    run.postmortem = doc.output.postmortem;
-    run.cfoBrief = doc.output.cfoBrief;
+    //
+    // Best effort, deliberately. Writing the incident up is valuable but it is
+    // not the remediation: a transient error here once marked a run `failed`
+    // whose fix had executed and whose recovery had been verified, which is a
+    // far worse thing to tell an operator than "fixed, but I could not write it
+    // up". The outcome is already decided above and nothing below may change it.
+    try {
+      t0 = begin('document');
+      const leak = await scalar(M.revenueLeakUsd('15m')).catch(() => null);
+      const doc = await runStep({
+        name: 'document',
+        model: PRO,
+        schema: Documentation,
+        instruction: [
+          'Write the incident record for a revenue-loss incident that has just been',
+          'auto-remediated. Produce two things: a technical postmortem for the NOC',
+          '(timeline, root cause, evidence, action taken, verification) and a short CFO',
+          'brief in plain business language stating dollars at risk and dollars recovered.',
+          'Be specific and factual, use the numbers supplied, and do not speculate.',
+          'Return JSON only.',
+        ].join(' '),
+        input: {
+          incident,
+          hypothesis: hypothesis.output,
+          falsification: falsification.output,
+          plan,
+          executed,
+          recovered,
+          residualGap: gapNow,
+          revenueLeakUsd: leak,
+        },
+      });
+      step('document', 'llm', t0, doc.output, usageFields(doc.usage, costMul));
+      run.postmortem = doc.output.postmortem;
+      run.cfoBrief = doc.output.cfoBrief;
 
-    await createAnnotation(
-      `AdBreak ${run.runId}: ${hypothesis.output.failureClass} on ${vars.device} - ` +
-        `${runbook.id} executed, ${recovered ? 'recovery verified' : 'NOT recovered, rolled back'}`,
-      ['adbreak', 'agent', recovered ? 'remediated' : 'rollback'],
-    );
-    await createIncident(doc.output.incidentTitle, 'critical', doc.output.cfoBrief);
+      await createAnnotation(
+        `AdBreak ${run.runId}: ${hypothesis.output.failureClass} on ${vars.device} - ` +
+          `${runbook.id} executed, ${recovered ? 'recovery verified' : 'NOT recovered, rolled back'}`,
+        ['adbreak', 'agent', recovered ? 'remediated' : 'rollback'],
+      );
+      await createIncident(doc.output.incidentTitle, 'critical', doc.output.cfoBrief);
+    } catch (err) {
+      // The incident is resolved either way; say so, and record that the
+      // write-up is missing rather than losing the outcome with it.
+      run.postmortem = `Documentation step failed: ${String(err)}. The remediation itself ` +
+        `${recovered ? 'executed and recovery was verified.' : 'did not achieve recovery and was rolled back.'}`;
+      step('document', 'code', Date.now(), { failed: true, err: String(err) });
+    }
 
     return run;
   } catch (err) {
