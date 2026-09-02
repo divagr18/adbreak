@@ -59,8 +59,9 @@ a:hover { border-bottom-color:var(--fg-2); }
 /* Stats: a row aligned to a grid, separated by rules rather than boxed in cards. */
 .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
   border-top:1px solid var(--b); border-bottom:1px solid var(--b); }
-.stat { padding:14px 20px 14px 0; }
-.stat + .stat { border-left:1px solid var(--b-subtle); padding-left:20px; }
+.stat { padding:14px 22px 14px 0; min-width:0; }
+.stat + .stat { border-left:1px solid var(--b-subtle); padding-left:22px; }
+.stat .v, .stat .l, .stat .n { overflow-wrap:anywhere; }
 .stat .l { color:var(--fg-3); font-size:11px; letter-spacing:.04em; }
 .stat .v { font:500 24px/1.15 var(--sans); margin-top:5px; letter-spacing:-.02em; }
 .stat .v.money { color:var(--money); }
@@ -69,16 +70,19 @@ a:hover { border-bottom-color:var(--fg-2); }
 .stat .n { color:var(--fg-3); font-size:11.5px; margin-top:3px; line-height:1.4; }
 
 table { border-collapse:collapse; width:100%; font-size:13px; }
-th,td { text-align:left; padding:8px 12px 8px 0; border-bottom:1px solid var(--b-subtle);
+/* Every cell keeps a gutter on both sides. Right-aligned columns previously had
+   padding-right:0, which let them run straight into the next column. */
+th,td { text-align:left; padding:8px 14px 8px 0; border-bottom:1px solid var(--b-subtle);
   vertical-align:baseline; }
+th:last-child,td:last-child { padding-right:0; }
 th { color:var(--fg-3); font-weight:500; font-size:11px; letter-spacing:.05em;
-  border-bottom-color:var(--b); padding-bottom:7px; }
-td.m,th.m { font-family:var(--mono); font-size:12.5px; }
-td.n,th.n { text-align:right; font-family:var(--mono); font-size:12.5px; white-space:nowrap;
-  padding-right:0; }
-td.money { text-align:right; font-family:var(--mono); font-size:13px; color:var(--money);
-  white-space:nowrap; padding-right:0; }
+  border-bottom-color:var(--b); padding-bottom:7px; white-space:nowrap; }
+td.m,th.m { font-family:var(--mono); font-size:12.5px; white-space:nowrap; }
+td.n,th.n { text-align:right; font-family:var(--mono); font-size:12.5px; white-space:nowrap; }
+td.money,th.money { text-align:right; font-family:var(--mono); font-size:13px; color:var(--money);
+  white-space:nowrap; }
 td.money.zero { color:var(--fg-3); }
+td.wide { min-width:112px; }
 tbody tr:hover { background:var(--hover); }
 
 pre { background:var(--panel); border:1px solid var(--b-subtle); border-radius:6px;
@@ -104,12 +108,15 @@ button:focus-visible { outline:2px solid var(--money); outline-offset:2px; }
 
 .step { border-bottom:1px solid var(--b-subtle); }
 .step > summary { cursor:pointer; padding:9px 0; list-style:none;
-  display:grid; grid-template-columns:20px 132px 1fr auto; gap:14px; align-items:baseline; }
+  display:grid; grid-template-columns:20px minmax(0,210px) minmax(0,1fr) auto; gap:16px;
+  align-items:baseline; }
 .step > summary::-webkit-details-marker { display:none; }
 .step > summary:hover { background:var(--hover); }
 .step .n { color:var(--fg-3); font:12px var(--mono); }
-.step .name { font-weight:500; font-size:13px; font-family:var(--mono); }
-.step .said { color:var(--fg-2); font-size:13px; line-height:1.5; }
+.step .name { font-weight:500; font-size:13px; font-family:var(--mono);
+  overflow-wrap:anywhere; }
+.step .said { color:var(--fg-2); font-size:13px; line-height:1.5; overflow-wrap:anywhere;
+  min-width:0; }
 .step .meta { color:var(--fg-3); font:11.5px var(--mono); white-space:nowrap; }
 .step .body { padding:2px 0 16px 34px; }
 @media (max-width:820px){ .step>summary{grid-template-columns:18px 1fr} .step .said,.step .meta{grid-column:2}
@@ -198,7 +205,7 @@ export function renderRunList(runs: AgentRun[]): string {
         <td class="m">${esc(r.failureClass ?? '—')}</td>
         <td class="m">${esc(r.runbookId?.replace('rb-', '') ?? '—')}</td>
         ${money}
-        <td>${outcomePill(r.outcome)}</td>
+        <td class="wide">${outcomePill(r.outcome)}</td>
         <td class="n">${secs(r.detectedAt, r.verifiedAt ?? r.remediatedAt)}</td>
         <td class="n">$${r.costUsd.toFixed(3)}</td>
       </tr>`;
@@ -241,7 +248,7 @@ export function renderRunList(runs: AgentRun[]): string {
        <h2>Every incident</h2>
        <table>
          <thead><tr><th class="m">run</th><th class="m">detected</th><th>device</th><th class="m">cause</th>
-           <th class="m">runbook</th><th class="n">unearned</th><th>what it did</th>
+           <th class="m">runbook</th><th class="money">unearned</th><th class="wide">what it did</th>
            <th class="n">to fix</th><th class="n">cost</th></tr></thead>
          <tbody>${rows || '<tr><td colspan="9">No incidents yet — the agent is watching.</td></tr>'}</tbody>
        </table>
@@ -335,7 +342,7 @@ function renderStep(s: StepRecord, i: number): string {
   return `<details class="step"${i < 2 ? ' open' : ''}>
     <summary>
       <span class="n">${i + 1}</span>
-      <span class="name">${esc(s.step)}</span>
+      <span class="name">${esc(s.step.replace(':', ' · ').replace(/_/g, ' '))}</span>
       <span class="said">${esc(summarise(s))}</span>
       <span class="meta">${kind} · ${(s.durationMs / 1000).toFixed(1)}s${tokens}${cost}</span>
     </summary>
