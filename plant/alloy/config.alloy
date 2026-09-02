@@ -39,9 +39,13 @@ prometheus.remote_write "grafana_cloud" {
   // identical labels, Prometheus treats them as ONE series with samples
   // interleaved from two sources, and every rate over that series is nonsense -
   // increase() over 10m read 649,890 where one plant produces about 2,000.
+  // coalesce, not a ternary: Alloy has no `? :` operator, and the config was
+  // rejected at load, which put this container into a crash loop. Nothing then
+  // shipped to Grafana Cloud at all, and the symptom was an evaluation that
+  // could never find the plant settled.
   external_labels = {
     plant = "adbreak",
-    env   = sys.env("ADBREAK_ENV") != "" ? sys.env("ADBREAK_ENV") : "local",
+    env   = coalesce(sys.env("ADBREAK_ENV"), "local"),
   }
 }
 
