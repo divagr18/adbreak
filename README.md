@@ -17,8 +17,8 @@ Agentic Cinema hackathon — **Grafana track**.
 
 | | |
 |---|---|
-| Personalized HLS stream | `http://34.135.234.146:8084/session/demo/playlist.m3u8?device_class=web&region=us-east&cdn=cdn-east` |
-| Agent run traces | http://34.135.234.146:8090/trace |
+| Personalized HLS stream | https://stream.divagr.com/session/demo/playlist.m3u8?device_class=web&region=us-east&cdn=cdn-east |
+| Agent run traces | https://trace.divagr.com/trace |
 
 The trace UI is the thing to look at: every run shows each step, the PromQL it issued,
 what it concluded, how long it took, what it cost, and — where relevant — why it decided
@@ -174,9 +174,17 @@ stack and Prometheus treats them as a single series with samples interleaved
 from two independent counters, at which point every rate is nonsense.
 
 Alloy stamps `env` from `ADBREAK_ENV` (`local` by default, `gcp` on the VM) so
-the two no longer collide. Even so, stop one plant's Alloy while measuring the
-other: the agent's own queries do not filter on `env`, so with both running they
-would sum two plants together.
+the two no longer collide as a single series. Even so, only one may ship at a
+time: the agent's PromQL does not filter on `env`, so with both live each agent
+reasons over the other's telemetry as well as its own. The deployed agent spent
+an afternoon diagnosing faults injected on a laptop this way — harmless, since
+it only ever remediates its own SSAI, but it produced a run history describing a
+plant nobody could see.
+
+`./deploy/judging-mode.sh` performs the handover: it silences the local plant,
+clears the deployed agent's history of runs it made while reading someone else's
+telemetry, and brings the VM's Alloy and polling up. `./deploy/judging-mode.sh
+local` reverses it.
 
 ### Scope decisions, noted rather than hidden
 
