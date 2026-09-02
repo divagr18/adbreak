@@ -20,109 +20,108 @@ const esc = (s: unknown): string =>
 const REPO = 'https://github.com/divagr18/adbreak';
 
 const CSS = `
-/* Type: a system sans for prose, monospace only where character alignment
-   carries meaning - PromQL, JSON, ids, money, durations.
-   Layout: generous whitespace and one clear hierarchy. A visitor should be able
-   to answer "how much money did this catch" before reading a single row. */
+/* Follows vercel.com/design: monochrome by default, colour only where it carries
+   meaning, spacing and alignment before borders, and no cards wrapped around
+   every metric. Density comes from removing chrome rather than shrinking text -
+   body copy stays readable at 14px and the greys stay above AA.
+   Geist first in the stack for anyone who has it; system fallback otherwise, so
+   the page carries no font dependency. */
 :root {
-  --bg:#0b0f14; --surface:#111823; --raised:#161e2b; --border:#1f2937;
-  --text:#eef2f7; --muted:#9fabbb; --dim:#7b8798;
-  --blue:#7cb0ff; --green:#5fd39a; --red:#ff9a9a; --amber:#f2c46a; --violet:#c4a6ff;
-  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --bg:#000; --panel:#0a0a0a; --hover:#0f0f0f;
+  --b-subtle:#1a1a1a; --b:#242424; --b-strong:#333;
+  --fg:#ededed; --fg-2:#a1a1a1; --fg-3:#7d7d7d;
+  --accent:#ededed; --money:#f5a623; --good:#3ecf8e; --bad:#f56565;
+  --sans:Geist,"Geist Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  --mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   color-scheme: dark;
 }
 * { box-sizing:border-box; }
-body { background:var(--bg); color:var(--text); margin:0; padding:0 28px 96px;
-  font:15px/1.7 var(--sans); -webkit-font-smoothing:antialiased; }
-.wrap { max-width:1060px; margin:0 auto; }
+body { background:var(--bg); color:var(--fg); margin:0; padding:0 24px 48px;
+  font:14px/1.55 var(--sans); -webkit-font-smoothing:antialiased;
+  font-variant-numeric:tabular-nums; }
+.wrap { max-width:1200px; margin:0 auto; }
 
-header { padding:72px 0 0; }
-.eyebrow { color:var(--dim); font-size:12px; font-weight:650; letter-spacing:.12em;
-  text-transform:uppercase; margin-bottom:18px; }
-h1 { font-size:34px; line-height:1.2; letter-spacing:-.022em; margin:0; font-weight:660; max-width:20ch; }
-h1 .thin { color:var(--muted); font-weight:400; }
-.lede { color:var(--muted); margin:20px 0 0; max-width:62ch; font-size:16px; line-height:1.75; }
-.lede strong { color:var(--text); font-weight:600; }
-h2 { font-size:12px; margin:0 0 20px; color:var(--dim); font-weight:650;
-  text-transform:uppercase; letter-spacing:.1em; }
-section { margin-top:72px; }
-a { color:var(--blue); text-decoration:none; }
-a:hover { text-decoration:underline; text-underline-offset:3px; }
-.tag { font:13px var(--mono); color:var(--dim); }
+/* Header: one line of identity, one of orientation. No panel around it. */
+header { padding:28px 0 20px; }
+.eyebrow { color:var(--fg-3); font-size:11px; font-weight:500; letter-spacing:.08em;
+  text-transform:uppercase; margin-bottom:10px; }
+h1 { font-size:22px; line-height:1.25; letter-spacing:-.018em; margin:0; font-weight:600; }
+h1 .thin { color:var(--fg-2); font-weight:400; }
+.lede { color:var(--fg-2); margin:8px 0 0; max-width:78ch; font-size:13.5px; line-height:1.6; }
+.lede strong { color:var(--fg); font-weight:500; }
+h2 { font-size:11px; margin:0 0 10px; color:var(--fg-3); font-weight:500;
+  text-transform:uppercase; letter-spacing:.08em; }
+section { margin-top:26px; }
+a { color:var(--fg); text-decoration:none; border-bottom:1px solid var(--b-strong); }
+a:hover { border-bottom-color:var(--fg-2); }
+.tag { font:12px var(--mono); color:var(--fg-3); }
 
-/* The headline number. Everything else on the page is subordinate to it. */
-.hero { margin:52px 0 0; padding:36px 40px; border:1px solid var(--border); border-radius:16px;
-  background:linear-gradient(160deg,#0f1922,#0d131b); }
-.hero .l { color:var(--dim); font-size:12px; font-weight:650; letter-spacing:.1em; text-transform:uppercase; }
-.hero .money { font:660 56px/1.05 var(--mono); letter-spacing:-.03em; margin:14px 0 0; color:var(--amber); }
-.hero .money.good { color:var(--green); }
-.hero .n { color:var(--muted); font-size:15px; margin-top:14px; max-width:56ch; line-height:1.7; }
-.hero .split { display:flex; gap:56px; flex-wrap:wrap; margin-top:34px; padding-top:28px;
-  border-top:1px solid var(--border); }
-.hero .split div .l { font-size:11px; }
-.hero .split div .v { font:600 24px/1.2 var(--mono); margin-top:8px; }
+/* Stats: a row aligned to a grid, separated by rules rather than boxed in cards. */
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
+  border-top:1px solid var(--b); border-bottom:1px solid var(--b); }
+.stat { padding:14px 20px 14px 0; }
+.stat + .stat { border-left:1px solid var(--b-subtle); padding-left:20px; }
+.stat .l { color:var(--fg-3); font-size:11px; letter-spacing:.04em; }
+.stat .v { font:500 24px/1.15 var(--sans); margin-top:5px; letter-spacing:-.02em; }
+.stat .v.money { color:var(--money); }
+.stat .v.good { color:var(--good); }
+.stat .v.quiet { color:var(--fg-3); font-size:17px; }
+.stat .n { color:var(--fg-3); font-size:11.5px; margin-top:3px; line-height:1.4; }
 
-.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:16px; }
-.card { border:1px solid var(--border); border-radius:12px; padding:22px 24px; background:var(--surface); }
-.card .l { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.09em; font-weight:650; }
-.card .v { font:600 30px/1.15 var(--mono); margin-top:10px; letter-spacing:-.02em; }
-.card .n { color:var(--muted); font-size:13px; margin-top:8px; line-height:1.6; }
+table { border-collapse:collapse; width:100%; font-size:13px; }
+th,td { text-align:left; padding:8px 12px 8px 0; border-bottom:1px solid var(--b-subtle);
+  vertical-align:baseline; }
+th { color:var(--fg-3); font-weight:500; font-size:11px; letter-spacing:.05em;
+  border-bottom-color:var(--b); padding-bottom:7px; }
+td.m,th.m { font-family:var(--mono); font-size:12.5px; }
+td.n,th.n { text-align:right; font-family:var(--mono); font-size:12.5px; white-space:nowrap;
+  padding-right:0; }
+td.money { text-align:right; font-family:var(--mono); font-size:13px; color:var(--money);
+  white-space:nowrap; padding-right:0; }
+td.money.zero { color:var(--fg-3); }
+tbody tr:hover { background:var(--hover); }
 
-table { border-collapse:collapse; width:100%; font-size:14px; }
-th,td { text-align:left; padding:16px 14px; border-bottom:1px solid var(--border); vertical-align:top; }
-th { color:var(--dim); font-weight:650; font-size:11px; text-transform:uppercase; letter-spacing:.09em;
-  padding-bottom:12px; }
-.mono { font-family:var(--mono); font-size:13px; }
-.num { font-family:var(--mono); font-size:13.5px; text-align:right; white-space:nowrap; }
-th.num { text-align:right; }
-.money-cell { font-family:var(--mono); font-size:14px; text-align:right; white-space:nowrap; color:var(--amber); }
-.money-cell.zero { color:var(--dim); }
-tbody tr:hover { background:var(--surface); }
+pre { background:var(--panel); border:1px solid var(--b-subtle); border-radius:6px;
+  padding:10px 12px; overflow-x:auto; margin:6px 0 0; white-space:pre-wrap; word-break:break-word;
+  font:12.5px/1.55 var(--mono); color:var(--fg-2); }
+pre.q { color:var(--good); }
 
-pre { background:var(--surface); border:1px solid var(--border); border-radius:10px;
-  padding:16px 18px; overflow-x:auto; margin:10px 0 0; white-space:pre-wrap; word-break:break-word;
-  font:13px/1.65 var(--mono); color:var(--muted); }
-pre.q { color:var(--green); border-color:#1e3a2a; background:#0d1a13; }
+.pill { display:inline-block; padding:1px 8px; border-radius:4px; font-size:11.5px;
+  font-weight:500; border:1px solid var(--b); color:var(--fg-2); white-space:nowrap; }
+.pill.ok { color:var(--good); border-color:#1d3d2e; }
+.pill.bad { color:var(--bad); border-color:#3d1d1d; }
+.pill.warn { color:var(--money); border-color:#3d321d; }
 
-.pill { display:inline-block; padding:3px 11px; border-radius:999px; font-size:12px;
-  font-weight:600; border:1px solid; white-space:nowrap; }
-.ok{color:var(--green);border-color:#245c40;background:#0f2419}
-.bad{color:var(--red);border-color:#5c2828;background:#241111}
-.warn{color:var(--amber);border-color:#5c4a24;background:#241e10}
-.mut{color:var(--muted);border-color:var(--border);background:var(--surface)}
-.llm{color:var(--violet);border-color:#3d2b5c;background:#191325}
+/* The one place colour and a border are warranted: something needs a human. */
+.banner { border:1px solid #3d321d; border-radius:6px; padding:14px 18px; margin:20px 0 0; }
+.banner h3 { margin:0 0 4px; font-size:14px; color:var(--money); font-weight:600; }
+.banner p { margin:0; color:var(--fg-2); font-size:13px; line-height:1.6; max-width:80ch; }
+.banner form { margin-top:12px; }
+button { font:500 13px var(--sans); cursor:pointer; padding:7px 16px; border-radius:6px;
+  border:1px solid var(--b-strong); background:var(--fg); color:#000; }
+button:hover { background:#fff; }
+button:focus-visible { outline:2px solid var(--money); outline-offset:2px; }
 
-.banner { border-radius:14px; padding:26px 30px; margin:44px 0 0; border:1px solid var(--amber);
-  background:linear-gradient(160deg,#241e10,#1a1710); }
-.banner h3 { margin:0 0 10px; font-size:19px; color:var(--amber); font-weight:650; letter-spacing:-.01em; }
-.banner p { margin:0; color:#dcc79a; font-size:15px; line-height:1.75; max-width:66ch; }
-.banner form { margin-top:22px; }
-button { font:600 15px var(--sans); cursor:pointer; padding:12px 26px; border-radius:10px;
-  border:1px solid var(--green); background:#0f2419; color:var(--green); transition:background .12s; }
-button:hover { background:#16311f; }
-button:focus-visible { outline:2px solid var(--green); outline-offset:3px; }
-
-.step { border:1px solid var(--border); border-radius:12px; margin:14px 0; overflow:hidden; background:var(--surface); }
-.step > summary { cursor:pointer; padding:18px 22px; list-style:none;
-  display:grid; grid-template-columns:26px 160px 1fr auto; gap:18px; align-items:baseline; }
+.step { border-bottom:1px solid var(--b-subtle); }
+.step > summary { cursor:pointer; padding:9px 0; list-style:none;
+  display:grid; grid-template-columns:20px 132px 1fr auto; gap:14px; align-items:baseline; }
 .step > summary::-webkit-details-marker { display:none; }
-.step > summary:hover { background:var(--raised); }
-.step[open] > summary { border-bottom:1px solid var(--border); }
-.step .n { color:var(--dim); font:13px var(--mono); }
-.step .name { font-weight:650; font-size:15px; font-family:var(--mono); }
-.step .said { color:var(--muted); font-size:14.5px; line-height:1.55; }
-.step .meta { color:var(--dim); font:12px var(--mono); white-space:nowrap; }
-.step .body { padding:8px 22px 26px; }
-@media (max-width:780px){ .step>summary{grid-template-columns:22px 1fr} .step .said,.step .meta{grid-column:2} }
+.step > summary:hover { background:var(--hover); }
+.step .n { color:var(--fg-3); font:12px var(--mono); }
+.step .name { font-weight:500; font-size:13px; font-family:var(--mono); }
+.step .said { color:var(--fg-2); font-size:13px; line-height:1.5; }
+.step .meta { color:var(--fg-3); font:11.5px var(--mono); white-space:nowrap; }
+.step .body { padding:2px 0 16px 34px; }
+@media (max-width:820px){ .step>summary{grid-template-columns:18px 1fr} .step .said,.step .meta{grid-column:2}
+  .step .body{padding-left:0} }
 
-.ev { margin:8px 0 0; padding-left:22px; color:var(--muted); font-size:14.5px; line-height:1.7; }
-.ev li { margin:7px 0; }
+.ev { margin:5px 0 0; padding-left:18px; color:var(--fg-2); font-size:13px; line-height:1.6; }
+.ev li { margin:3px 0; }
 div.ev { padding-left:0; }
-.pre-l { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.09em;
-  margin-top:24px; font-weight:650; }
-footer { margin-top:88px; padding-top:28px; border-top:1px solid var(--border);
-  color:var(--dim); font-size:13.5px; line-height:1.8; max-width:74ch; }
+.pre-l { color:var(--fg-3); font-size:10.5px; text-transform:uppercase; letter-spacing:.07em;
+  margin-top:14px; font-weight:500; }
+footer { margin-top:40px; padding-top:16px; border-top:1px solid var(--b-subtle);
+  color:var(--fg-3); font-size:12.5px; line-height:1.65; max-width:88ch; }
 `;
 
 const page = (title: string, body: string): string =>
@@ -150,9 +149,9 @@ const outcomePill = (outcome: string): string => {
       : outcome === 'failed' || outcome === 'blocked' || outcome === 'blocked_on_approval'
         ? 'bad'
         : outcome === 'no_action'
-          ? 'mut'
+          ? ''
           : 'warn';
-  return `<span class="pill ${cls}">${esc(outcome)}</span>`;
+  return `<span class="pill ${cls}">${esc(outcome.replace(/_/g, ' '))}</span>`;
 };
 
 const secs = (a?: string, b?: string): string =>
@@ -163,18 +162,15 @@ const when = (iso: string): string => esc(iso.replace('T', ' ').slice(0, 19));
 // ---------------------------------------------------------------------------
 
 export function renderRunList(runs: AgentRun[]): string {
-  const money = (n: number): string =>
-    n >= 100 ? `$${n.toFixed(0)}` : n >= 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(2)}`;
+  const usd = (n: number): string => (n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${n.toFixed(2)}`);
 
   const remediated = runs.filter((r) => r.outcome === 'remediated').length;
   const held = runs.filter((r) => r.outcome === 'awaiting_approval');
   const escalated = runs.filter((r) => r.outcome === 'no_action').length;
   const stopped = runs.filter((r) => r.outcome === 'killed_by_watchdog').length;
-  const priced = runs.filter((r) => typeof r.revenueAtRiskUsd === 'number');
-  const caught = priced.reduce((sum, r) => sum + (r.revenueAtRiskUsd ?? 0), 0);
-  // Only count as stopped what was actually verified as recovered.
+  const caught = runs.reduce((sum, r) => sum + (r.revenueAtRiskUsd ?? 0), 0);
   const stoppedLeak = runs
-    .filter((r) => r.recovered === true && typeof r.revenueAtRiskUsd === 'number')
+    .filter((r) => r.recovered === true)
     .reduce((sum, r) => sum + (r.revenueAtRiskUsd ?? 0), 0);
   const spend = runs.reduce((sum, r) => sum + r.costUsd, 0);
   const verified = runs.filter((r) => r.verifiedAt);
@@ -183,32 +179,38 @@ export function renderRunList(runs: AgentRun[]): string {
       verified.length
     : 0;
 
+  const stat = (l: string, v: string, cls = '', n = ''): string =>
+    `<div class="stat"><div class="l">${l}</div><div class="v ${cls}">${v}</div>${
+      n ? `<div class="n">${n}</div>` : ''
+    }</div>`;
+
   const rows = runs
     .map((r) => {
       const atRisk = r.revenueAtRiskUsd;
-      const cell =
+      const money =
         typeof atRisk === 'number'
-          ? `<td class="money-cell${atRisk < 0.01 ? ' zero' : ''}">${money(atRisk)}</td>`
-          : `<td class="money-cell zero">—</td>`;
+          ? `<td class="money${atRisk < 0.01 ? ' zero' : ''}">${usd(atRisk)}</td>`
+          : `<td class="money zero">—</td>`;
       return `<tr>
-        <td class="mono"><a href="/trace/${esc(r.runId)}">${esc(r.runId)}</a></td>
-        <td class="mono">${when(r.detectedAt)}</td>
+        <td class="m"><a href="/trace/${esc(r.runId)}">${esc(r.runId)}</a></td>
+        <td class="m">${when(r.detectedAt).slice(5)}</td>
         <td>${esc(r.incident.deviceClass)}</td>
-        <td class="mono">${esc(r.failureClass ?? '—')}</td>
-        ${cell}
+        <td class="m">${esc(r.failureClass ?? '—')}</td>
+        <td class="m">${esc(r.runbookId?.replace('rb-', '') ?? '—')}</td>
+        ${money}
         <td>${outcomePill(r.outcome)}</td>
-        <td class="num">${secs(r.detectedAt, r.verifiedAt ?? r.remediatedAt)}</td>
+        <td class="n">${secs(r.detectedAt, r.verifiedAt ?? r.remediatedAt)}</td>
+        <td class="n">$${r.costUsd.toFixed(3)}</td>
       </tr>`;
     })
     .join('');
 
   const holdBanner = held.length
     ? `<div class="banner">
-         <h3>${held.length} plan${held.length > 1 ? 's are' : ' is'} waiting for a human</h3>
-         <p>A channel-wide change is classified T2, which this agent will not make on its own. It has
-            diagnosed the fault, chosen the runbook and rendered the plan &mdash; and stopped. Open
-            ${held.map((r) => `<a href="/trace/${esc(r.runId)}">${esc(r.runId)}</a>`).join(', ')}
-            to read it and decide.</p>
+         <h3>${held.length} plan${held.length > 1 ? 's' : ''} waiting for a human</h3>
+         <p>A channel-wide change is classified T2, which this agent will not make on its own. It
+            diagnosed the fault, chose the runbook, rendered the plan &mdash; and stopped.
+            ${held.map((r) => `<a href="/trace/${esc(r.runId)}">${esc(r.runId)}</a>`).join(' · ')}</p>
        </div>`
     : '';
 
@@ -217,50 +219,31 @@ export function renderRunList(runs: AgentRun[]): string {
     `<header>
        <div class="eyebrow">AdBreak · revenue SRE for live streaming</div>
        <h1>A detector for <span class="thin">money the stream never earned.</span></h1>
-       <p class="lede">Ad breaks fail quietly. The video keeps playing, every delivery dashboard
-         stays green, and the impressions that were supposed to be billed simply never arrive.
-         This agent watches for <strong>revenue that should have been realised and was not</strong>,
-         finds the stage responsible, and repairs it &mdash; or stops and asks, when the fix would
-         touch every viewer on the channel.</p>
+       <p class="lede">Ad breaks fail quietly: the video keeps playing, every delivery dashboard
+         stays green, and impressions that should have been billed never arrive. This agent watches
+         for <strong>revenue that should have been realised and was not</strong>, finds the stage
+         responsible, and repairs it &mdash; or stops and asks, when the fix would touch every
+         viewer on the channel.</p>
      </header>
 
-     <div class="hero">
-       <div class="l">Unearned revenue caught</div>
-       <div class="money">${money(caught)}</div>
-       <div class="n">Ad inventory that was signalled, served, and never billed &mdash; measured
-         across the fifteen minutes before each incident was detected. Every dollar here was
-         invisible to delivery monitoring.</div>
-       <div class="split">
-         <div><div class="l">leak stopped &amp; verified</div>
-              <div class="v" style="color:var(--green)">${money(stoppedLeak)}</div></div>
-         <div><div class="l">incidents</div><div class="v">${runs.length}</div></div>
-         <div><div class="l">mean time to verified fix</div><div class="v">${meanMttr.toFixed(0)}s</div></div>
-         <div><div class="l">cost to run the agent</div><div class="v" style="color:var(--dim)">${money(spend)}</div></div>
-       </div>
+     <div class="stats">
+       ${stat('unearned revenue caught', usd(caught), 'money', 'signalled, served, never billed')}
+       ${stat('leak stopped &amp; verified', usd(stoppedLeak), 'good', 'confirmed on live telemetry')}
+       ${stat('incidents', String(runs.length), '', `${remediated} fixed · ${held.length} held · ${escalated} escalated`)}
+       ${stat('mean time to verified fix', `${meanMttr.toFixed(0)}s`, '', 'bounded by the break cadence')}
+       ${stat('stopped by watchdog', String(stopped), '', 'its own supervisor intervened')}
+       ${stat('cost to run the agent', `$${spend.toFixed(2)}`, 'quiet', 'Vertex AI, all runs')}
      </div>
 
      ${holdBanner}
 
      <section>
-       <h2>What it did about them</h2>
-       <div class="cards">
-         <div class="card"><div class="l">fixed &amp; verified</div><div class="v" style="color:var(--green)">${remediated}</div>
-           <div class="n">the fix was confirmed against live telemetry, not assumed</div></div>
-         <div class="card"><div class="l">held for a human</div><div class="v" style="color:var(--amber)">${held.length}</div>
-           <div class="n">too wide a blast radius for the agent to self-approve</div></div>
-         <div class="card"><div class="l">escalated</div><div class="v">${escalated}</div>
-           <div class="n">diagnosed, but no safe automatic remedy exists</div></div>
-         <div class="card"><div class="l">stopped by watchdog</div><div class="v">${stopped}</div>
-           <div class="n">its own supervisor cut the run short</div></div>
-       </div>
-     </section>
-
-     <section>
        <h2>Every incident</h2>
        <table>
-         <thead><tr><th>run</th><th>detected</th><th>device</th><th>cause</th>
-           <th class="num">unearned</th><th>what it did</th><th class="num">time to fix</th></tr></thead>
-         <tbody>${rows || '<tr><td colspan="7">No incidents yet — the agent is watching.</td></tr>'}</tbody>
+         <thead><tr><th class="m">run</th><th class="m">detected</th><th>device</th><th class="m">cause</th>
+           <th class="m">runbook</th><th class="n">unearned</th><th>what it did</th>
+           <th class="n">to fix</th><th class="n">cost</th></tr></thead>
+         <tbody>${rows || '<tr><td colspan="9">No incidents yet — the agent is watching.</td></tr>'}</tbody>
        </table>
      </section>`,
   );
@@ -395,70 +378,48 @@ export function renderRun(r: AgentRun): string {
       : '';
 
   const meaning = OUTCOME_MEANING[r.outcome] ?? '';
-  const money = (n: number): string => `$${n.toFixed(2)}`;
+  const usd = (n: number): string => `$${n.toFixed(2)}`;
   const atRisk = r.revenueAtRiskUsd;
   const after = r.revenueLeakAfterUsd;
 
-  // The headline for a single incident is what it was costing, not what the
-  // reasoning cost. The agent's own bill belongs in the footnotes, and is put
-  // beside the leak deliberately so the ratio between them is visible.
-  const hero =
-    typeof atRisk === 'number'
-      ? `<div class="hero">
-           <div class="l">Unearned revenue when this was caught</div>
-           <div class="money${atRisk < 0.01 ? ' good' : ''}">${money(atRisk)}</div>
-           <div class="n">Ad inventory signalled and served over the preceding fifteen minutes
-             that was never billed. Delivery monitoring reported this period as healthy.</div>
-           <div class="split">
-             ${
-               typeof after === 'number'
-                 ? `<div><div class="l">still leaking after the fix</div>
-                      <div class="v" style="color:${after < atRisk * 0.2 ? 'var(--green)' : 'var(--amber)'}">${money(after)}</div></div>`
-                 : ''
-             }
-             <div><div class="l">time to verified fix</div>
-                  <div class="v">${secs(r.detectedAt, r.verifiedAt)}</div></div>
-             <div><div class="l">cost to diagnose &amp; repair</div>
-                  <div class="v" style="color:var(--dim)">$${r.costUsd.toFixed(4)}</div></div>
-           </div>
-         </div>`
-      : '';
-
-  const card = (l: string, v: string, n = ''): string =>
-    `<div class="card"><div class="l">${l}</div><div class="v">${v}</div>${
+  const stat = (l: string, v: string, cls = '', n = ''): string =>
+    `<div class="stat"><div class="l">${l}</div><div class="v ${cls}">${v}</div>${
       n ? `<div class="n">${n}</div>` : ''
     }</div>`;
 
   return page(
     `AdBreak — incident ${r.runId}`,
     `<header>
-       <div class="eyebrow"><a href="/trace">← all incidents</a></div>
+       <div class="eyebrow"><a href="/trace">all incidents</a> · ${esc(r.runId)}</div>
        <h1>${esc(r.failureClass ?? 'Incident')} <span class="thin">on ${esc(
          r.incident.deviceClass,
-       )}</span></h1>
-       <p class="lede">${outcomePill(r.outcome)} &nbsp; ${esc(meaning)}</p>
-       <div class="tag" style="margin-top:14px">${esc(r.incident.region)} ·
-         detected ${when(r.detectedAt)}</div>
+       )} in ${esc(r.incident.region)}</span></h1>
+       <p class="lede">${outcomePill(r.outcome)} &nbsp; ${esc(meaning)} &middot;
+         detected ${when(r.detectedAt)}</p>
      </header>
 
-     ${hero}
-     ${approve}
+     <div class="stats">
+       ${
+         typeof atRisk === 'number'
+           ? stat('unearned when caught', usd(atRisk), 'money', 'ad inventory never billed, prior 15m')
+           : ''
+       }
+       ${
+         typeof after === 'number'
+           ? stat('still leaking after', usd(after), after < (atRisk ?? 1) * 0.2 ? 'good' : 'money', 'same measure, after the fix')
+           : ''
+       }
+       ${stat('cause', esc(r.failureClass ?? '—'), '', 'graded against a ledger it cannot read')}
+       ${stat('runbook', esc(r.runbookId?.replace('rb-', '') ?? 'none'), '', r.runbookId ? 'chosen by lookup, never the model' : 'nothing mapped — escalated')}
+       ${stat('blast radius', esc(r.tier ?? '—'), '', esc(r.verdict ?? ''))}
+       ${stat('detect→remediate', secs(r.detectedAt, r.remediatedAt), '', 'the part the agent controls')}
+       ${stat('detect→verified', secs(r.detectedAt, r.verifiedAt), '', 'bounded by the break cadence')}
+       ${stat('cost to diagnose', `$${r.costUsd.toFixed(4)}`, 'quiet', 'Vertex AI, this incident')}
+       ${r.approvedBy ? stat('approved by', esc(r.approvedBy), '', 'preconditions re-checked first') : ''}
+       ${r.watchdog ? stat('watchdog', esc(r.watchdog.reason), '', 'its supervisor stopped this run') : ''}
+     </div>
 
-     <section>
-       <h2>How it decided</h2>
-       <div class="cards">
-         ${card('cause', esc(r.failureClass ?? '—'), 'graded against a ledger the agent cannot read')}
-         ${card(
-           'runbook',
-           esc(r.runbookId ?? 'none'),
-           r.runbookId ? 'chosen by lookup table, never by the model' : 'nothing mapped — escalate to a human',
-         )}
-         ${card('blast radius', `${esc(r.tier ?? '—')}`, esc(r.verdict ?? ''))}
-         ${card('detect→remediate', secs(r.detectedAt, r.remediatedAt), 'the part the agent controls')}
-         ${r.approvedBy ? card('approved by', esc(r.approvedBy), 'preconditions re-checked against live telemetry first') : ''}
-         ${r.watchdog ? card('watchdog', esc(r.watchdog.reason), 'its own supervisor stopped this run') : ''}
-       </div>
-     </section>
+     ${approve}
 
      <section>
        <h2>Every step it took</h2>
