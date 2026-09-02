@@ -127,6 +127,23 @@ button:focus-visible { outline:2px solid var(--money); outline-offset:2px; }
 div.ev { padding-left:0; }
 .pre-l { color:var(--fg-3); font-size:10.5px; text-transform:uppercase; letter-spacing:.07em;
   margin-top:14px; font-weight:500; }
+/* A legend, collapsed by default so it costs one line until it is wanted.
+   The states here are domain-specific - nobody arriving cold can be expected to
+   know that no_action is a deliberate escalation rather than a failure. */
+.legend { margin-top:22px; border-top:1px solid var(--b-subtle); }
+.legend > summary { cursor:pointer; list-style:none; padding:11px 0; color:var(--fg-2);
+  font-size:12.5px; display:flex; align-items:center; gap:8px; }
+.legend > summary::-webkit-details-marker { display:none; }
+.legend > summary::before { content:"+"; color:var(--fg-3); font:12px var(--mono); }
+.legend[open] > summary::before { content:"−"; }
+.legend > summary:hover { color:var(--fg); }
+.legend .cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr));
+  gap:0 40px; padding:4px 0 20px; }
+.legend h4 { font-size:11px; color:var(--fg-3); font-weight:500; letter-spacing:.07em;
+  text-transform:uppercase; margin:10px 0 8px; }
+.legend dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:5px 14px; align-items:baseline; }
+.legend dt { font:12px var(--mono); color:var(--fg); white-space:nowrap; }
+.legend dd { margin:0; color:var(--fg-2); font-size:12.5px; line-height:1.5; }
 footer { margin-top:40px; padding-top:16px; border-top:1px solid var(--b-subtle);
   color:var(--fg-3); font-size:12.5px; line-height:1.65; max-width:88ch; }
 `;
@@ -167,6 +184,57 @@ const secs = (a?: string, b?: string): string =>
 const when = (iso: string): string => esc(iso.replace('T', ' ').slice(0, 19));
 
 // ---------------------------------------------------------------------------
+
+/**
+ * What the columns and states mean.
+ *
+ * Rendered once and shared, because the outcomes appear on both views and a
+ * definition that drifts between two places is worse than none. Collapsed by
+ * default: a returning operator does not need it, and someone seeing the page
+ * for the first time should not have to guess that `no action` is a deliberate
+ * escalation rather than a failure to do anything.
+ */
+function legend(): string {
+  const dl = (rows: [string, string][]): string =>
+    `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
+
+  return `<details class="legend">
+    <summary>What the columns and outcomes mean</summary>
+    <div class="cols">
+      <div>
+        <h4>Columns</h4>
+        ${dl([
+          ['run', 'One incident, start to finish. Open it for every step, the PromQL issued and what came back.'],
+          ['detected', 'When the revenue SLO alert was picked up. The agent confirms the leak is still live before engaging.'],
+          ['device', 'The device class the loss was scoped to. Most faults hit one slice, not the whole channel.'],
+          ['cause', 'The failure class it settled on, graded against a ledger of what chaos actually did — which the agent cannot read.'],
+          ['runbook', 'The repair, chosen by a lookup table from the failure class. Never chosen by the model.'],
+          ['unearned', 'Ad inventory signalled, served, and never billed in the fifteen minutes before detection. The money this exists to find.'],
+          ['to fix', 'Detection to verified recovery. Bounded by the ad-break cadence rather than by the agent — a fix cannot prove itself until a whole break has run after it.'],
+          ['cost', 'Vertex AI spend on the reasoning for that one incident.'],
+        ])}
+      </div>
+      <div>
+        <h4>Outcomes</h4>
+        ${dl([
+          ['remediated', 'Fixed, and recovery confirmed against live telemetry rather than assumed.'],
+          ['awaiting approval', 'Diagnosed and planned, then stopped. The fix would change what every viewer on the channel is served, which the agent will not do on its own.'],
+          ['no action', 'Diagnosed, but nothing safe is mapped to this failure class — so it escalated with its evidence instead of improvising.'],
+          ['blocked', 'A runbook applied, but its safety preconditions were not met at the moment of acting.'],
+          ['blocked on approval', 'A human approved, but by then the plant had moved and the plan no longer applied.'],
+          ['failed', 'The fix ran and recovery was not observed inside the runbook budget, so it was rolled back.'],
+          ['killed by watchdog', 'Its own supervisor stopped the run for stalling, looping, or spending past its ceiling. The partial trace is kept.'],
+        ])}
+        <h4>Blast radius</h4>
+        ${dl([
+          ['T1', 'One device class in one region. The agent may act alone.'],
+          ['T2', 'Channel-wide. Planned, then held for a human.'],
+          ['T3', 'Wider than the agent is trusted with at all.'],
+        ])}
+      </div>
+    </div>
+  </details>`;
+}
 
 export function renderRunList(runs: AgentRun[]): string {
   const usd = (n: number): string => (n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${n.toFixed(2)}`);
@@ -252,6 +320,7 @@ export function renderRunList(runs: AgentRun[]): string {
            <th class="n">to fix</th><th class="n">cost</th></tr></thead>
          <tbody>${rows || '<tr><td colspan="9">No incidents yet — the agent is watching.</td></tr>'}</tbody>
        </table>
+       ${legend()}
      </section>`,
   );
 }
@@ -434,6 +503,7 @@ export function renderRun(r: AgentRun): string {
          The runbook is chosen by a lookup table, the blast-radius gate is policy, and the
          watchdog is arithmetic.</p>
        ${steps}
+       ${legend()}
      </section>
      ${doc}`,
   );
