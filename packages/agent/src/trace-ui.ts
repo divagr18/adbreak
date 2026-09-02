@@ -20,110 +20,109 @@ const esc = (s: unknown): string =>
 const REPO = 'https://github.com/divagr18/adbreak';
 
 const CSS = `
-/* Type: a system sans for anything a human reads as prose, monospace reserved
-   for the things where character alignment carries meaning - PromQL, JSON, ids,
-   durations. The whole page used to be monospace, which made the parts that
-   matter most the hardest to read. */
+/* Type: a system sans for prose, monospace only where character alignment
+   carries meaning - PromQL, JSON, ids, money, durations.
+   Layout: generous whitespace and one clear hierarchy. A visitor should be able
+   to answer "how much money did this catch" before reading a single row. */
 :root {
-  --bg:      #0b0f14;
-  --surface: #121821;
-  --raised:  #161d28;
-  --border:  #212a37;
-  --text:    #e6eaf0;
-  --muted:   #9aa5b4;
-  --dim:     #7c8797;
-  --blue:    #7cb0ff;
-  --green:   #5fd39a;
-  --red:     #ff9a9a;
-  --amber:   #f2c46a;
-  --violet:  #c4a6ff;
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --bg:#0b0f14; --surface:#111823; --raised:#161e2b; --border:#1f2937;
+  --text:#eef2f7; --muted:#9fabbb; --dim:#7b8798;
+  --blue:#7cb0ff; --green:#5fd39a; --red:#ff9a9a; --amber:#f2c46a; --violet:#c4a6ff;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
   color-scheme: dark;
 }
-* { box-sizing: border-box; }
-body {
-  background: var(--bg); color: var(--text); margin: 0; padding: 0 24px 72px;
-  font: 15px/1.65 var(--sans);
-  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
-}
-.wrap { max-width: 1120px; margin: 0 auto; }
+* { box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); margin:0; padding:0 28px 96px;
+  font:15px/1.7 var(--sans); -webkit-font-smoothing:antialiased; }
+.wrap { max-width:1060px; margin:0 auto; }
 
-header { padding: 40px 0 26px; border-bottom: 1px solid var(--border); margin-bottom: 28px; }
-h1 { font-size: 26px; line-height: 1.25; letter-spacing: -.015em; margin: 0 0 8px; font-weight: 650; }
-h1 .thin { color: var(--muted); font-weight: 400; }
-h2 { font-size: 12px; margin: 36px 0 12px; color: var(--dim); font-weight: 650;
-     text-transform: uppercase; letter-spacing: .09em; }
-.lede { color: var(--muted); margin: 12px 0 0; max-width: 68ch; font-size: 15px; line-height: 1.7; }
-.lede strong { color: var(--text); font-weight: 600; }
-.tag { font-size: 13px; color: var(--dim); font-family: var(--mono); }
-a { color: var(--blue); text-decoration: none; }
-a:hover { text-decoration: underline; text-underline-offset: 2px; }
+header { padding:72px 0 0; }
+.eyebrow { color:var(--dim); font-size:12px; font-weight:650; letter-spacing:.12em;
+  text-transform:uppercase; margin-bottom:18px; }
+h1 { font-size:34px; line-height:1.2; letter-spacing:-.022em; margin:0; font-weight:660; max-width:20ch; }
+h1 .thin { color:var(--muted); font-weight:400; }
+.lede { color:var(--muted); margin:20px 0 0; max-width:62ch; font-size:16px; line-height:1.75; }
+.lede strong { color:var(--text); font-weight:600; }
+h2 { font-size:12px; margin:0 0 20px; color:var(--dim); font-weight:650;
+  text-transform:uppercase; letter-spacing:.1em; }
+section { margin-top:72px; }
+a { color:var(--blue); text-decoration:none; }
+a:hover { text-decoration:underline; text-underline-offset:3px; }
+.tag { font:13px var(--mono); color:var(--dim); }
 
-table { border-collapse: collapse; width: 100%; font-size: 14px; }
-th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
-th { color: var(--dim); font-weight: 650; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
-td:first-child, td:nth-child(2) { font-family: var(--mono); font-size: 13px; }
-td:last-child, td:nth-last-child(2) { font-family: var(--mono); font-size: 13px; text-align: right; }
-th:last-child, th:nth-last-child(2) { text-align: right; }
-tbody tr:hover { background: var(--surface); }
+/* The headline number. Everything else on the page is subordinate to it. */
+.hero { margin:52px 0 0; padding:36px 40px; border:1px solid var(--border); border-radius:16px;
+  background:linear-gradient(160deg,#0f1922,#0d131b); }
+.hero .l { color:var(--dim); font-size:12px; font-weight:650; letter-spacing:.1em; text-transform:uppercase; }
+.hero .money { font:660 56px/1.05 var(--mono); letter-spacing:-.03em; margin:14px 0 0; color:var(--amber); }
+.hero .money.good { color:var(--green); }
+.hero .n { color:var(--muted); font-size:15px; margin-top:14px; max-width:56ch; line-height:1.7; }
+.hero .split { display:flex; gap:56px; flex-wrap:wrap; margin-top:34px; padding-top:28px;
+  border-top:1px solid var(--border); }
+.hero .split div .l { font-size:11px; }
+.hero .split div .v { font:600 24px/1.2 var(--mono); margin-top:8px; }
 
-pre {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-  padding: 12px 14px; overflow-x: auto; margin: 8px 0 0;
-  white-space: pre-wrap; word-break: break-word;
-  font: 13px/1.6 var(--mono); color: var(--muted);
-}
-pre.q { color: var(--green); border-color: #1e3a2a; background: #0e1a13; }
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:16px; }
+.card { border:1px solid var(--border); border-radius:12px; padding:22px 24px; background:var(--surface); }
+.card .l { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.09em; font-weight:650; }
+.card .v { font:600 30px/1.15 var(--mono); margin-top:10px; letter-spacing:-.02em; }
+.card .n { color:var(--muted); font-size:13px; margin-top:8px; line-height:1.6; }
 
-.pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px;
-        font-weight: 600; border: 1px solid; white-space: nowrap; font-family: var(--sans); }
-.ok    { color: var(--green);  border-color: #245c40; background: #0f2419; }
-.bad   { color: var(--red);    border-color: #5c2828; background: #241111; }
-.warn  { color: var(--amber);  border-color: #5c4a24; background: #241e10; }
-.mut   { color: var(--muted);  border-color: var(--border); background: var(--surface); }
-.llm   { color: var(--violet); border-color: #3d2b5c; background: #191325; }
+table { border-collapse:collapse; width:100%; font-size:14px; }
+th,td { text-align:left; padding:16px 14px; border-bottom:1px solid var(--border); vertical-align:top; }
+th { color:var(--dim); font-weight:650; font-size:11px; text-transform:uppercase; letter-spacing:.09em;
+  padding-bottom:12px; }
+.mono { font-family:var(--mono); font-size:13px; }
+.num { font-family:var(--mono); font-size:13.5px; text-align:right; white-space:nowrap; }
+th.num { text-align:right; }
+.money-cell { font-family:var(--mono); font-size:14px; text-align:right; white-space:nowrap; color:var(--amber); }
+.money-cell.zero { color:var(--dim); }
+tbody tr:hover { background:var(--surface); }
 
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 12px; margin: 22px 0 4px; }
-.card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background: var(--surface); }
-.card .l { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 650; }
-.card .v { font: 600 26px/1.2 var(--mono); margin-top: 6px; letter-spacing: -.02em; }
-.card .n { color: var(--muted); font-size: 12.5px; margin-top: 4px; line-height: 1.45; }
+pre { background:var(--surface); border:1px solid var(--border); border-radius:10px;
+  padding:16px 18px; overflow-x:auto; margin:10px 0 0; white-space:pre-wrap; word-break:break-word;
+  font:13px/1.65 var(--mono); color:var(--muted); }
+pre.q { color:var(--green); border-color:#1e3a2a; background:#0d1a13; }
 
-.banner { border-radius: 10px; padding: 18px 20px; margin: 24px 0; border: 1px solid var(--amber);
-          background: linear-gradient(180deg, #241e10, #1b1810); }
-.banner h3 { margin: 0 0 6px; font-size: 16px; color: var(--amber); font-weight: 650; }
-.banner p { margin: 0; color: #dcc79a; font-size: 14.5px; line-height: 1.65; max-width: 72ch; }
-.banner form { margin-top: 14px; }
-button { font: 600 14px var(--sans); cursor: pointer; padding: 10px 20px; border-radius: 8px;
-         border: 1px solid var(--green); background: #0f2419; color: var(--green); transition: background .12s; }
-button:hover { background: #16311f; }
-button:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.pill { display:inline-block; padding:3px 11px; border-radius:999px; font-size:12px;
+  font-weight:600; border:1px solid; white-space:nowrap; }
+.ok{color:var(--green);border-color:#245c40;background:#0f2419}
+.bad{color:var(--red);border-color:#5c2828;background:#241111}
+.warn{color:var(--amber);border-color:#5c4a24;background:#241e10}
+.mut{color:var(--muted);border-color:var(--border);background:var(--surface)}
+.llm{color:var(--violet);border-color:#3d2b5c;background:#191325}
 
-.step { border: 1px solid var(--border); border-radius: 10px; margin: 10px 0; overflow: hidden;
-        background: var(--surface); }
-.step > summary { cursor: pointer; padding: 13px 16px; list-style: none;
-                  display: grid; grid-template-columns: 22px 152px 1fr auto; gap: 14px; align-items: baseline; }
-.step > summary::-webkit-details-marker { display: none; }
-.step > summary:hover { background: var(--raised); }
-.step[open] > summary { border-bottom: 1px solid var(--border); }
-.step .n { color: var(--dim); font: 13px var(--mono); }
-.step .name { font-weight: 650; font-size: 14.5px; font-family: var(--mono); }
-.step .said { color: var(--muted); font-size: 14px; line-height: 1.5; }
-.step .meta { color: var(--dim); font: 12px var(--mono); white-space: nowrap; }
-.step .body { padding: 4px 16px 18px; }
-@media (max-width: 760px) {
-  .step > summary { grid-template-columns: 20px 1fr; }
-  .step .said, .step .meta { grid-column: 2; }
-}
+.banner { border-radius:14px; padding:26px 30px; margin:44px 0 0; border:1px solid var(--amber);
+  background:linear-gradient(160deg,#241e10,#1a1710); }
+.banner h3 { margin:0 0 10px; font-size:19px; color:var(--amber); font-weight:650; letter-spacing:-.01em; }
+.banner p { margin:0; color:#dcc79a; font-size:15px; line-height:1.75; max-width:66ch; }
+.banner form { margin-top:22px; }
+button { font:600 15px var(--sans); cursor:pointer; padding:12px 26px; border-radius:10px;
+  border:1px solid var(--green); background:#0f2419; color:var(--green); transition:background .12s; }
+button:hover { background:#16311f; }
+button:focus-visible { outline:2px solid var(--green); outline-offset:3px; }
 
-.ev { margin: 6px 0 0; padding-left: 20px; color: var(--muted); font-size: 14px; line-height: 1.6; }
-.ev li { margin: 5px 0; }
-div.ev { padding-left: 0; }
-.pre-l { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
-         margin-top: 16px; font-weight: 650; }
-footer { margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--border);
-         color: var(--dim); font-size: 13.5px; line-height: 1.7; max-width: 76ch; }
+.step { border:1px solid var(--border); border-radius:12px; margin:14px 0; overflow:hidden; background:var(--surface); }
+.step > summary { cursor:pointer; padding:18px 22px; list-style:none;
+  display:grid; grid-template-columns:26px 160px 1fr auto; gap:18px; align-items:baseline; }
+.step > summary::-webkit-details-marker { display:none; }
+.step > summary:hover { background:var(--raised); }
+.step[open] > summary { border-bottom:1px solid var(--border); }
+.step .n { color:var(--dim); font:13px var(--mono); }
+.step .name { font-weight:650; font-size:15px; font-family:var(--mono); }
+.step .said { color:var(--muted); font-size:14.5px; line-height:1.55; }
+.step .meta { color:var(--dim); font:12px var(--mono); white-space:nowrap; }
+.step .body { padding:8px 22px 26px; }
+@media (max-width:780px){ .step>summary{grid-template-columns:22px 1fr} .step .said,.step .meta{grid-column:2} }
+
+.ev { margin:8px 0 0; padding-left:22px; color:var(--muted); font-size:14.5px; line-height:1.7; }
+.ev li { margin:7px 0; }
+div.ev { padding-left:0; }
+.pre-l { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.09em;
+  margin-top:24px; font-weight:650; }
+footer { margin-top:88px; padding-top:28px; border-top:1px solid var(--border);
+  color:var(--dim); font-size:13.5px; line-height:1.8; max-width:74ch; }
 `;
 
 const page = (title: string, body: string): string =>
@@ -164,11 +163,19 @@ const when = (iso: string): string => esc(iso.replace('T', ' ').slice(0, 19));
 // ---------------------------------------------------------------------------
 
 export function renderRunList(runs: AgentRun[]): string {
-  const done = runs.filter((r) => r.outcome !== 'awaiting_approval');
+  const money = (n: number): string =>
+    n >= 100 ? `$${n.toFixed(0)}` : n >= 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(2)}`;
+
   const remediated = runs.filter((r) => r.outcome === 'remediated').length;
   const held = runs.filter((r) => r.outcome === 'awaiting_approval');
   const escalated = runs.filter((r) => r.outcome === 'no_action').length;
   const stopped = runs.filter((r) => r.outcome === 'killed_by_watchdog').length;
+  const priced = runs.filter((r) => typeof r.revenueAtRiskUsd === 'number');
+  const caught = priced.reduce((sum, r) => sum + (r.revenueAtRiskUsd ?? 0), 0);
+  // Only count as stopped what was actually verified as recovered.
+  const stoppedLeak = runs
+    .filter((r) => r.recovered === true && typeof r.revenueAtRiskUsd === 'number')
+    .reduce((sum, r) => sum + (r.revenueAtRiskUsd ?? 0), 0);
   const spend = runs.reduce((sum, r) => sum + r.costUsd, 0);
   const verified = runs.filter((r) => r.verifiedAt);
   const meanMttr = verified.length
@@ -177,69 +184,85 @@ export function renderRunList(runs: AgentRun[]): string {
     : 0;
 
   const rows = runs
-    .map(
-      (r) => `<tr>
-      <td><a href="/trace/${esc(r.runId)}">${esc(r.runId)}</a></td>
-      <td>${when(r.detectedAt)}</td>
-      <td>${esc(r.incident.deviceClass)}</td>
-      <td>${esc(r.failureClass ?? '—')}</td>
-      <td>${esc(r.runbookId ?? '—')}</td>
-      <td>${esc(r.tier ?? '—')}</td>
-      <td>${outcomePill(r.outcome)}</td>
-      <td>${secs(r.detectedAt, r.verifiedAt ?? r.remediatedAt)}</td>
-      <td>$${r.costUsd.toFixed(4)}</td>
-    </tr>`,
-    )
+    .map((r) => {
+      const atRisk = r.revenueAtRiskUsd;
+      const cell =
+        typeof atRisk === 'number'
+          ? `<td class="money-cell${atRisk < 0.01 ? ' zero' : ''}">${money(atRisk)}</td>`
+          : `<td class="money-cell zero">—</td>`;
+      return `<tr>
+        <td class="mono"><a href="/trace/${esc(r.runId)}">${esc(r.runId)}</a></td>
+        <td class="mono">${when(r.detectedAt)}</td>
+        <td>${esc(r.incident.deviceClass)}</td>
+        <td class="mono">${esc(r.failureClass ?? '—')}</td>
+        ${cell}
+        <td>${outcomePill(r.outcome)}</td>
+        <td class="num">${secs(r.detectedAt, r.verifiedAt ?? r.remediatedAt)}</td>
+      </tr>`;
+    })
     .join('');
 
-  // A plan waiting on a human is the single most interesting thing on this page,
-  // so it is said at the top rather than left to be noticed in a table row.
   const holdBanner = held.length
-    ? `<div class="banner hold">
+    ? `<div class="banner">
          <h3>${held.length} plan${held.length > 1 ? 's are' : ' is'} waiting for a human</h3>
-         <p>A channel-wide change is classified T2, which this agent will not make on its own.
-            It has diagnosed the fault, chosen the runbook and rendered the plan — and stopped.
-            Open ${held
-              .map((r) => `<a href="/trace/${esc(r.runId)}">${esc(r.runId)}</a>`)
-              .join(', ')} to read it and decide.</p>
+         <p>A channel-wide change is classified T2, which this agent will not make on its own. It has
+            diagnosed the fault, chosen the runbook and rendered the plan &mdash; and stopped. Open
+            ${held.map((r) => `<a href="/trace/${esc(r.runId)}">${esc(r.runId)}</a>`).join(', ')}
+            to read it and decide.</p>
        </div>`
     : '';
 
   return page(
-    'AdBreak — agent runs',
+    'AdBreak — money not earned',
     `<header>
-       <h1>AdBreak <span class="thin">— agent runs</span></h1>
-       <p class="lede">This agent watches a live ad-insertion pipeline for <strong>revenue leaks that
-       every delivery dashboard reports as healthy</strong>. Each row is one incident it handled by
-       itself: what it concluded, whether it acted, how long it took and what the reasoning cost.
-       Open any run to see every step, including the exact PromQL it issued.</p>
+       <div class="eyebrow">AdBreak · revenue SRE for live streaming</div>
+       <h1>A detector for <span class="thin">money the stream never earned.</span></h1>
+       <p class="lede">Ad breaks fail quietly. The video keeps playing, every delivery dashboard
+         stays green, and the impressions that were supposed to be billed simply never arrive.
+         This agent watches for <strong>revenue that should have been realised and was not</strong>,
+         finds the stage responsible, and repairs it &mdash; or stops and asks, when the fix would
+         touch every viewer on the channel.</p>
      </header>
+
+     <div class="hero">
+       <div class="l">Unearned revenue caught</div>
+       <div class="money">${money(caught)}</div>
+       <div class="n">Ad inventory that was signalled, served, and never billed &mdash; measured
+         across the fifteen minutes before each incident was detected. Every dollar here was
+         invisible to delivery monitoring.</div>
+       <div class="split">
+         <div><div class="l">leak stopped &amp; verified</div>
+              <div class="v" style="color:var(--green)">${money(stoppedLeak)}</div></div>
+         <div><div class="l">incidents</div><div class="v">${runs.length}</div></div>
+         <div><div class="l">mean time to verified fix</div><div class="v">${meanMttr.toFixed(0)}s</div></div>
+         <div><div class="l">cost to run the agent</div><div class="v" style="color:var(--dim)">${money(spend)}</div></div>
+       </div>
+     </div>
 
      ${holdBanner}
 
-     <div class="cards">
-       <div class="card"><div class="l">incidents handled</div><div class="v">${runs.length}</div>
-         <div class="n">${done.length} concluded</div></div>
-       <div class="card"><div class="l">fixed &amp; verified</div><div class="v">${remediated}</div>
-         <div class="n">recovery confirmed on live telemetry</div></div>
-       <div class="card"><div class="l">held for a human</div><div class="v">${held.length}</div>
-         <div class="n">too wide a blast radius to self-approve</div></div>
-       <div class="card"><div class="l">escalated</div><div class="v">${escalated}</div>
-         <div class="n">no safe automatic remedy exists</div></div>
-       <div class="card"><div class="l">stopped by watchdog</div><div class="v">${stopped}</div>
-         <div class="n">its own supervisor intervened</div></div>
-       <div class="card"><div class="l">mean detect→verified</div><div class="v">${meanMttr.toFixed(0)}s</div>
-         <div class="n">bounded by the ad-break cadence</div></div>
-       <div class="card"><div class="l">total reasoning spend</div><div class="v">$${spend.toFixed(2)}</div>
-         <div class="n">across every run on this page</div></div>
-     </div>
+     <section>
+       <h2>What it did about them</h2>
+       <div class="cards">
+         <div class="card"><div class="l">fixed &amp; verified</div><div class="v" style="color:var(--green)">${remediated}</div>
+           <div class="n">the fix was confirmed against live telemetry, not assumed</div></div>
+         <div class="card"><div class="l">held for a human</div><div class="v" style="color:var(--amber)">${held.length}</div>
+           <div class="n">too wide a blast radius for the agent to self-approve</div></div>
+         <div class="card"><div class="l">escalated</div><div class="v">${escalated}</div>
+           <div class="n">diagnosed, but no safe automatic remedy exists</div></div>
+         <div class="card"><div class="l">stopped by watchdog</div><div class="v">${stopped}</div>
+           <div class="n">its own supervisor cut the run short</div></div>
+       </div>
+     </section>
 
-     <h2>Runs</h2>
-     <table>
-       <thead><tr><th>run</th><th>detected</th><th>device</th><th>class</th><th>runbook</th>
-       <th>blast radius</th><th>outcome</th><th>detect→verified</th><th>cost</th></tr></thead>
-       <tbody>${rows || '<tr><td colspan="9">No runs yet — the agent is watching.</td></tr>'}</tbody>
-     </table>`,
+     <section>
+       <h2>Every incident</h2>
+       <table>
+         <thead><tr><th>run</th><th>detected</th><th>device</th><th>cause</th>
+           <th class="num">unearned</th><th>what it did</th><th class="num">time to fix</th></tr></thead>
+         <tbody>${rows || '<tr><td colspan="7">No incidents yet — the agent is watching.</td></tr>'}</tbody>
+       </table>
+     </section>`,
   );
 }
 
@@ -344,10 +367,13 @@ function renderStep(s: StepRecord, i: number): string {
 
 export function renderRun(r: AgentRun): string {
   const steps = r.steps.map(renderStep).join('');
+  // The CFO brief comes first deliberately: on a page about money, the plain
+  // business account of what was lost and recovered is the more useful of the
+  // two write-ups, and the technical postmortem is there for whoever inherits it.
   const doc = [
-    r.postmortem ? `<h2>Postmortem</h2><pre>${esc(r.postmortem)}</pre>` : '',
-    r.cfoBrief ? `<h2>CFO brief</h2><pre>${esc(r.cfoBrief)}</pre>` : '',
-    r.error ? `<h2>Error</h2><pre>${esc(r.error)}</pre>` : '',
+    r.cfoBrief ? `<section><h2>What this cost, in plain terms</h2><pre>${esc(r.cfoBrief)}</pre></section>` : '',
+    r.postmortem ? `<section><h2>Postmortem for the NOC</h2><pre>${esc(r.postmortem)}</pre></section>` : '',
+    r.error ? `<section><h2>Error</h2><pre>${esc(r.error)}</pre></section>` : '',
   ].join('');
 
   // The gate holding a T2 plan is only meaningful if a human can say yes.
@@ -369,37 +395,78 @@ export function renderRun(r: AgentRun): string {
       : '';
 
   const meaning = OUTCOME_MEANING[r.outcome] ?? '';
+  const money = (n: number): string => `$${n.toFixed(2)}`;
+  const atRisk = r.revenueAtRiskUsd;
+  const after = r.revenueLeakAfterUsd;
+
+  // The headline for a single incident is what it was costing, not what the
+  // reasoning cost. The agent's own bill belongs in the footnotes, and is put
+  // beside the leak deliberately so the ratio between them is visible.
+  const hero =
+    typeof atRisk === 'number'
+      ? `<div class="hero">
+           <div class="l">Unearned revenue when this was caught</div>
+           <div class="money${atRisk < 0.01 ? ' good' : ''}">${money(atRisk)}</div>
+           <div class="n">Ad inventory signalled and served over the preceding fifteen minutes
+             that was never billed. Delivery monitoring reported this period as healthy.</div>
+           <div class="split">
+             ${
+               typeof after === 'number'
+                 ? `<div><div class="l">still leaking after the fix</div>
+                      <div class="v" style="color:${after < atRisk * 0.2 ? 'var(--green)' : 'var(--amber)'}">${money(after)}</div></div>`
+                 : ''
+             }
+             <div><div class="l">time to verified fix</div>
+                  <div class="v">${secs(r.detectedAt, r.verifiedAt)}</div></div>
+             <div><div class="l">cost to diagnose &amp; repair</div>
+                  <div class="v" style="color:var(--dim)">$${r.costUsd.toFixed(4)}</div></div>
+           </div>
+         </div>`
+      : '';
+
   const card = (l: string, v: string, n = ''): string =>
     `<div class="card"><div class="l">${l}</div><div class="v">${v}</div>${
       n ? `<div class="n">${n}</div>` : ''
     }</div>`;
 
   return page(
-    `AdBreak run ${r.runId}`,
+    `AdBreak — incident ${r.runId}`,
     `<header>
-       <h1><a href="/trace">← all runs</a> <span class="thin">/ ${esc(r.runId)}</span></h1>
-       <div class="tag">${esc(r.incident.deviceClass)} · ${esc(r.incident.region)} ·
-         detected ${when(r.detectedAt)}</div>
+       <div class="eyebrow"><a href="/trace">← all incidents</a></div>
+       <h1>${esc(r.failureClass ?? 'Incident')} <span class="thin">on ${esc(
+         r.incident.deviceClass,
+       )}</span></h1>
        <p class="lede">${outcomePill(r.outcome)} &nbsp; ${esc(meaning)}</p>
+       <div class="tag" style="margin-top:14px">${esc(r.incident.region)} ·
+         detected ${when(r.detectedAt)}</div>
      </header>
 
+     ${hero}
      ${approve}
 
-     <div class="cards">
-       ${card('failure class', esc(r.failureClass ?? '—'), 'graded against a ledger the agent cannot read')}
-       ${card('runbook', esc(r.runbookId ?? 'none'), r.runbookId ? 'chosen by lookup, never by the model' : 'nothing mapped — escalate')}
-       ${card('blast radius', `${esc(r.tier ?? '—')}`, esc(r.verdict ?? ''))}
-       ${card('detect→remediate', secs(r.detectedAt, r.remediatedAt), 'what the agent controls')}
-       ${card('detect→verified', secs(r.detectedAt, r.verifiedAt), 'bounded by the break cadence')}
-       ${card('reasoning cost', `$${r.costUsd.toFixed(4)}`, 'Vertex AI Gemini, this run')}
-       ${r.approvedBy ? card('approved by', esc(r.approvedBy), 'preconditions re-checked first') : ''}
-       ${r.watchdog ? card('watchdog', esc(r.watchdog.reason), 'its own supervisor stopped this run') : ''}
-     </div>
+     <section>
+       <h2>How it decided</h2>
+       <div class="cards">
+         ${card('cause', esc(r.failureClass ?? '—'), 'graded against a ledger the agent cannot read')}
+         ${card(
+           'runbook',
+           esc(r.runbookId ?? 'none'),
+           r.runbookId ? 'chosen by lookup table, never by the model' : 'nothing mapped — escalate to a human',
+         )}
+         ${card('blast radius', `${esc(r.tier ?? '—')}`, esc(r.verdict ?? ''))}
+         ${card('detect→remediate', secs(r.detectedAt, r.remediatedAt), 'the part the agent controls')}
+         ${r.approvedBy ? card('approved by', esc(r.approvedBy), 'preconditions re-checked against live telemetry first') : ''}
+         ${r.watchdog ? card('watchdog', esc(r.watchdog.reason), 'its own supervisor stopped this run') : ''}
+       </div>
+     </section>
 
-     <h2>Every step, in order</h2>
-     <div class="tag" style="margin-bottom:10px">Only the model steps are a model. Plan is a lookup
-       table, the blast-radius gate is policy, and the watchdog is arithmetic.</div>
-     ${steps}
+     <section>
+       <h2>Every step it took</h2>
+       <p class="lede" style="margin:-8px 0 24px">Only the steps marked <em>llm</em> are a model.
+         The runbook is chosen by a lookup table, the blast-radius gate is policy, and the
+         watchdog is arithmetic.</p>
+       ${steps}
+     </section>
      ${doc}`,
   );
 }

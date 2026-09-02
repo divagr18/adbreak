@@ -56,6 +56,15 @@ export interface AgentRun {
   tier?: Tier;
   verdict?: Verdict;
   recovered?: boolean;
+  /**
+   * Dollars of ad inventory that went unsold in the 15 minutes before this was
+   * detected, and again once the fix had been verified. This is the number the
+   * whole system exists to move, and it belongs on the run record rather than
+   * only inside the prompt that writes the postmortem.
+   */
+  revenueAtRiskUsd?: number;
+  revenueLeakAfterUsd?: number;
+  /** What the reasoning cost. Not the money above - a rounding error against it. */
   costUsd: number;
   detectedAt: string;
   remediatedAt?: string;
@@ -337,6 +346,14 @@ export async function runIncident(
     costUsd: 0,
     detectedAt: nowIso(),
   };
+
+  // What is already being lost, before the agent does anything. Best effort:
+  // failing to price the incident must never stop it being handled.
+  void scalar(M.revenueLeakUsd('15m'))
+    .then((leak) => {
+      if (leak !== null) run.revenueAtRiskUsd = leak;
+    })
+    .catch(() => {});
 
   const step = (
     name: string,
@@ -632,6 +649,7 @@ export async function runIncident(
     const { recovered, residualGap: gapNow, query: verifyQuery, samples } = v;
     run.recovered = recovered;
     run.verifiedAt = nowIso();
+    run.revenueLeakAfterUsd = (await scalar(M.revenueLeakUsd('15m')).catch(() => null)) ?? undefined;
     step('verify', 'code', t0, {
       recovered,
       residualGap: gapNow,
@@ -790,6 +808,7 @@ export async function approveRun(
   const v = await verifyRecovery(runbook, vars.device);
   run.recovered = v.recovered;
   run.verifiedAt = nowIso();
+  run.revenueLeakAfterUsd = (await scalar(M.revenueLeakUsd('15m')).catch(() => null)) ?? undefined;
   stepAt('verify', t0, {
     recovered: v.recovered,
     residualGap: v.residualGap,
