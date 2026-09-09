@@ -122,7 +122,7 @@ Only the reasoning stages use Gemini. Runbook selection, policy checks, executio
 
 * **Fourteen-service Compose stack:** Nine TypeScript services model playout, packaging, ad decisions, SSAI, edge delivery, players, beacon collection, fault injection, and the agent. Redis, nginx, ffmpeg, Grafana MCP, and Grafana Alloy complete the stack.
 * **Real media signals:** Playout emits binary SCTE-35 cues through Redis. The packager adds `EXT-X-DATERANGE` and `CUE-OUT` tags. SSAI builds personalized manifests with one-for-one segment substitution. Two hundred synthetic players fire six IAB tracking events per creative.
-* **Google Agent Development Kit:** The agent invokes Gemini on Vertex AI through `@google/adk`. The GCE deployment provisions a service account with `roles/aiplatform.user` and uses attached credentials rather than a key file.
+* **Google Agent Development Kit:** The agent invokes Gemini on Vertex AI through `@google/adk`. Gemini 3.7 Flash handles fast classification and correlation, while Gemini 3.1 Pro Preview handles deeper hypothesis, falsification, and documentation steps. The GCE deployment provisions a service account with `roles/aiplatform.user` and uses attached credentials rather than a key file.
 * **Grafana Cloud telemetry:** Alloy scrapes Prometheus metrics and ships structured logs. The services export OpenTelemetry spans to Grafana Cloud over OTLP. Trace context travels from the cue bus into the manifest and beacon URLs.
 ---
 
@@ -138,10 +138,10 @@ The evaluation gates inject faults without telling the agent and grade its concl
 | Correct runbook selection | 100% across 9 fault scenarios |
 | Correct handling | 100% across all 11 scenarios |
 | Mean time to recovery | 78.6 seconds |
-| Mean reasoning cost | $0.0166 per incident |
+| Mean reasoning cost | $0.0166 per incident in the recorded evaluation |
 | False remediations | 0 |
 
-The safety gate separately exercises watchdog termination, healthy runs, Tier 2 approval, and escalation when no safe runbook exists. Unit tests cover the deterministic policy, approval, watchdog, SCTE-35, manifest, sampling, pricing, and beacon-retargeting logic.
+The recorded evaluation predates the move to Gemini 3.7 Flash and Gemini 3.1 Pro Preview, so new-run cost will differ. The safety gate separately exercises watchdog termination, healthy runs, Tier 2 approval, and escalation when no safe runbook exists. Unit tests cover the deterministic policy, approval, watchdog, SCTE-35, manifest, sampling, pricing, and beacon-retargeting logic.
 ---
 
 ## Testing Instructions for Hackathon Judges

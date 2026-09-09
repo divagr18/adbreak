@@ -11,11 +11,15 @@ import { InMemoryRunner, LlmAgent } from '@google/adk';
 import type { z } from 'zod';
 
 /** Flash for classification and query writing; Pro for synthesis and adversarial work. */
-export const FLASH = process.env.MODEL_FLASH ?? 'gemini-2.5-flash';
-export const PRO = process.env.MODEL_PRO ?? 'gemini-2.5-pro';
+export const FLASH = process.env.MODEL_FLASH ?? 'gemini-3.7-flash';
+export const PRO = process.env.MODEL_PRO ?? 'gemini-3.1-pro-preview';
 
 /** Vertex list price per 1M tokens, used for the cost-per-incident metric. */
 const PRICING: Record<string, { input: number; output: number }> = {
+  // Google Cloud introductory standard pricing through December 31, 2026.
+  'gemini-3.7-flash': { input: 0.75, output: 3.75 },
+  // Standard pricing for inputs up to 200K tokens. AdBreak prompts are far below that limit.
+  'gemini-3.1-pro-preview': { input: 2, output: 12 },
   'gemini-2.5-flash': { input: 0.3, output: 2.5 },
   'gemini-2.5-pro': { input: 1.25, output: 10 },
 };
@@ -35,7 +39,7 @@ export interface StepResult<T> {
 }
 
 function costOf(model: string, input: number, output: number): number {
-  const p = PRICING[model] ?? PRICING['gemini-2.5-flash'];
+  const p = PRICING[model] ?? PRICING['gemini-3.7-flash'];
   return (input / 1e6) * p.input + (output / 1e6) * p.output;
 }
 
