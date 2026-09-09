@@ -146,6 +146,26 @@ async function handle(instance: AlertInstance): Promise<void> {
     return;
   }
 
+  // A plan already waiting on a human suppresses re-detection too.
+  //
+  // The cooldown above only arms after a SUCCESSFUL remediation, so a T2 plan
+  // parked at awaiting_approval left nothing to stop the poller re-opening the
+  // same incident every cycle. Left overnight that is unbounded spend; observed
+  // in practice it produced thirty-six identical plans for one fault in ninety
+  // minutes, which is also the worst possible thing to hand the human who has
+  // to choose between them. One open plan per device class is the whole point
+  // of asking.
+  const pending = listRuns().find(
+    (r) => r.outcome === 'awaiting_approval' && r.incident.deviceClass === deviceClass,
+  );
+  if (pending) {
+    svc.log.info('a plan for this device class is already awaiting approval, standing down', {
+      device_class: deviceClass,
+      run_id: pending.runId,
+    });
+    return;
+  }
+
   // 4m, not 3m. The gap must be read over a whole number of 120s break
   // cadences or it is unusable: measured on a healthy plant, 3m ranged 0.759
   // across seven samples while 4m ranged 0.009. This guard was left on 3m when
@@ -320,7 +340,36 @@ admin.post('/agent-chaos', (req, res) => {
 });
 svc.admin(admin);
 
-svc.app.get('/runs', (_req, res) => res.json(listRuns()));
+/**
+ * Summaries, not the full traces.
+ *
+ * Every step of every run made this half a megabyte after fifty incidents, and
+ * anything polling it started timing out - including the demo seeder, which
+ * then reported that nothing had happened when in fact everything had. A single
+ * run is still available in full at /runs/:id.
+ */
+svc.app.get('/runs', (_req, res) =>
+  res.json(
+    listRuns().map((r) => ({
+      runId: r.runId,
+      outcome: r.outcome,
+      failureClass: r.failureClass,
+      runbookId: r.runbookId,
+      tier: r.tier,
+      recovered: r.recovered,
+      revenueAtRiskUsd: r.revenueAtRiskUsd,
+      revenueLeakAfterUsd: r.revenueLeakAfterUsd,
+      costUsd: r.costUsd,
+      detectedAt: r.detectedAt,
+      remediatedAt: r.remediatedAt,
+      verifiedAt: r.verifiedAt,
+      approvedBy: r.approvedBy,
+      watchdog: r.watchdog,
+      incident: r.incident,
+      steps: r.steps.length,
+    })),
+  ),
+);
 svc.app.get('/runs/:id', (req, res) => {
   const run = listRuns().find((r) => r.runId === req.params.id);
   if (!run) return res.status(404).json({ error: 'no such run' });
