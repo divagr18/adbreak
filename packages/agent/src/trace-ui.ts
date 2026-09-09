@@ -18,6 +18,12 @@ const esc = (s: unknown): string =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const REPO = 'https://github.com/divagr18/adbreak';
+const STREAM =
+  'https://stream.divagr.com/session/demo/playlist.m3u8' +
+  '?device_class=web&region=us-east&cdn=cdn-east';
+const DASH = 'https://petitesandpiper3092.grafana.net/public-dashboards';
+const REVENUE_DASH = `${DASH}/5dd92f11c68d4dd3a8123d1facc2a736`;
+const DELIVERY_DASH = `${DASH}/b09da6f7c5a4401f8f197e65ad2759c0`;
 
 const CSS = `
 /* Follows vercel.com/design: monochrome by default, colour only where it carries
@@ -344,6 +350,15 @@ export function renderRunList(runs: AgentRun[]): string {
        <p class="lede">We built an agent to catch the revenue that should be showing up. It figures
          out which link in the chain failed and fixes it. <strong>And whenever a fix might affect
          what viewers actually see, it steps back and asks a human first.</strong></p>
+       <p class="links">
+         <a href="${STREAM}">Watch the live stream</a>
+         <a href="${DELIVERY_DASH}">Delivery dashboard</a>
+         <a href="${REVENUE_DASH}">Revenue dashboard</a>
+         <a href="${REPO}">Source</a>
+       </p>
+       <p class="tag" style="margin-top:10px">Open the delivery and revenue dashboards side by
+         side during an incident. Delivery stays green the whole way through while revenue falls
+         off a cliff, which is the entire problem in one picture.</p>
      </header>
 
      <div class="stats">
