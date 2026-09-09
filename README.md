@@ -19,6 +19,14 @@ Agentic Cinema hackathon — **Grafana track**.
 |---|---|
 | Personalized HLS stream | https://stream.divagr.com/session/demo/playlist.m3u8?device_class=web&region=us-east&cdn=cdn-east |
 | Agent run traces | https://trace.divagr.com/trace |
+| Revenue Realization dashboard | https://petitesandpiper3092.grafana.net/public-dashboards/5dd92f11c68d4dd3a8123d1facc2a736 |
+| Delivery Health dashboard | https://petitesandpiper3092.grafana.net/public-dashboards/b09da6f7c5a4401f8f197e65ad2759c0 |
+| Agent Fleet Health dashboard | https://petitesandpiper3092.grafana.net/public-dashboards/95d4a6259bb74559b9d223336ab144cb |
+
+All three dashboards are public, no login needed. Open **Delivery Health** and **Revenue
+Realization** side by side during an incident: that pairing is the whole argument. Delivery
+stays green throughout while the revenue dashboard falls off a cliff, because nothing in a
+conventional NOC view can see an ad break that played perfectly and billed nothing.
 
 The trace UI is the thing to look at: every run shows each step, the PromQL it issued,
 what it concluded, how long it took, what it cost, and — where relevant — why it decided
