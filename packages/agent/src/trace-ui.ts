@@ -5,11 +5,11 @@
  *
  * Written for someone arriving cold. A judge or an on-call engineer who has
  * never seen this before should be able to tell, without reading the source,
- * what the agent concluded and why — and, where it declined to act, what
+ * what the agent concluded and why, and, where it declined to act, what
  * stopped it. Raw step output is kept one click away rather than dumped in
  * their face, because the summary is the point and the JSON is the evidence.
  *
- * Server-rendered strings on purpose — no build step, no framework, nothing
+ * Server-rendered strings on purpose, no build step, no framework, nothing
  * between the run record and what you see.
  */
 import type { AgentRun, StepRecord } from './run.js';
@@ -36,10 +36,10 @@ const CSS = `
   color-scheme: dark;
 }
 * { box-sizing:border-box; }
-body { background:var(--bg); color:var(--fg); margin:0; padding:0 24px 48px;
+body { background:var(--bg); color:var(--fg); margin:0; padding:0 32px 48px;
   font:14px/1.55 var(--sans); -webkit-font-smoothing:antialiased;
   font-variant-numeric:tabular-nums; }
-.wrap { max-width:1200px; margin:0 auto; }
+.wrap { max-width:1760px; margin:0 auto; }
 
 /* Header: one line of identity, one of orientation. No panel around it. */
 header { padding:28px 0 20px; }
@@ -47,7 +47,7 @@ header { padding:28px 0 20px; }
   text-transform:uppercase; margin-bottom:10px; }
 h1 { font-size:22px; line-height:1.25; letter-spacing:-.018em; margin:0; font-weight:600; }
 h1 .thin { color:var(--fg-2); font-weight:400; }
-.lede { color:var(--fg-2); margin:8px 0 0; max-width:78ch; font-size:13.5px; line-height:1.6; }
+.lede { color:var(--fg-2); margin:10px 0 0; max-width:92ch; font-size:13.5px; line-height:1.6; }
 .lede strong { color:var(--fg); font-weight:500; }
 h2 { font-size:11px; margin:0 0 10px; color:var(--fg-3); font-weight:500;
   text-transform:uppercase; letter-spacing:.08em; }
@@ -152,8 +152,8 @@ footer { margin-top:40px; padding-top:16px; border-top:1px solid var(--b-subtle)
 const page = (title: string, body: string): string =>
   `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
   `<title>${esc(title)}</title><style>${CSS}</style><div class="wrap">${body}` +
-  `<footer>AdBreak — an autonomous SRE agent whose SLO is revenue realization, not uptime. ` +
-  `Diagnosis runs on Vertex AI Gemini through the ADK; every read of and write back to Grafana ` +
+  `<footer>AdBreak, an agent that watches live ad revenue rather than uptime. ` +
+  `Diagnosis runs on Vertex AI Gemini through the ADK, and every read from and write back to Grafana ` +
   `goes through the Grafana MCP server. <a href="${REPO}">Source</a>.</footer></div>`;
 
 /**
@@ -188,13 +188,13 @@ const failureName = (code?: string): string =>
 
 /** What an outcome means, in the words you would use to a colleague. */
 const OUTCOME_MEANING: Record<string, string> = {
-  remediated: 'fixed, and the fix was verified against live telemetry',
-  awaiting_approval: 'diagnosed and planned, waiting for a human to approve',
-  blocked_on_approval: 'approved, but the plant had moved and the plan no longer applied',
-  blocked: 'a runbook applied but its safety preconditions were not met',
-  no_action: 'investigated, and deliberately did nothing',
-  failed: 'the fix ran but recovery was not observed, so it was rolled back',
-  killed_by_watchdog: 'stopped by its own supervisor',
+  remediated: 'fixed, and the fix was checked against live data',
+  awaiting_approval: 'diagnosed and planned, now waiting for a person to approve it',
+  blocked_on_approval: 'approved, but by then things had changed and the plan no longer applied',
+  blocked: 'a repair applied, but its safety checks did not pass',
+  no_action: 'investigated, then deliberately did nothing',
+  failed: 'the fix ran, recovery never showed up, so it was undone',
+  killed_by_watchdog: 'stopped by its own supervisor before it finished',
 };
 
 const outcomePill = (outcome: string): string => {
@@ -235,26 +235,26 @@ function legend(): string {
       <div>
         <h4>Columns</h4>
         ${dl([
-          ['run', 'One incident, start to finish. Open it for every step, the PromQL issued and what came back.'],
-          ['detected', 'When the revenue SLO alert was picked up. The agent confirms the leak is still live before engaging.'],
-          ['device', 'The device class the loss was scoped to. Most faults hit one slice, not the whole channel.'],
-          ['cause', 'Which link in the chain broke. Listed below, with the internal code the runbooks key on. Graded against a ledger of what actually went wrong, which the agent cannot read.'],
+          ['run', 'One incident, start to finish. Open it to see every step, the queries it ran, and what came back.'],
+          ['detected', 'When the revenue alert was picked up. The agent checks the problem is still happening before it engages.'],
+          ['device', 'The kind of device the losses were confined to. Most problems affect one group rather than the whole channel.'],
+          ['cause', 'Which link in the chain broke. The codes are listed below. Graded against a record of what actually went wrong, which the agent has no access to.'],
           ['runbook', 'What it did to fix it, chosen by a lookup table from the cause. Never chosen by the model.'],
-          ['unearned', 'Ad inventory signalled, served, and never billed in the fifteen minutes before detection. The money this exists to find.'],
-          ['to fix', 'Detection to verified recovery. Bounded by the ad-break cadence rather than by the agent — a fix cannot prove itself until a whole break has run after it.'],
-          ['cost', 'Vertex AI spend on the reasoning for that one incident.'],
+          ['unearned', 'Ads served and never billed for, in the fifteen minutes before the problem was found. This is the money the whole thing exists to catch.'],
+          ['to fix', 'From finding the problem to confirming it is fixed. This is limited by how often ad breaks come round, not by the agent, because a fix cannot prove itself until a whole break has run since.'],
+          ['cost', 'What the reasoning for that one incident cost on Vertex AI.'],
         ])}
       </div>
       <div>
         <h4>Outcomes</h4>
         ${dl([
-          ['remediated', 'Fixed, and recovery confirmed against live telemetry rather than assumed.'],
-          ['awaiting approval', 'Diagnosed and planned, then stopped. The fix would change what every viewer on the channel is served, which the agent will not do on its own.'],
-          ['no action', 'Diagnosed, but nothing safe is mapped to this failure class — so it escalated with its evidence instead of improvising.'],
-          ['blocked', 'A runbook applied, but its safety preconditions were not met at the moment of acting.'],
-          ['blocked on approval', 'A human approved, but by then the plant had moved and the plan no longer applied.'],
-          ['failed', 'The fix ran and recovery was not observed inside the runbook budget, so it was rolled back.'],
-          ['killed by watchdog', 'Its own supervisor stopped the run for stalling, looping, or spending past its ceiling. The partial trace is kept.'],
+          ['remediated', 'Fixed, and recovery confirmed against live data rather than assumed.'],
+          ['awaiting approval', 'Diagnosed and planned, then stopped. The fix would change what every viewer on the channel is served, and the agent will not do that on its own.'],
+          ['no action', 'Diagnosed, but there is no safe automatic repair for this one, so it passed the evidence to a person instead of improvising.'],
+          ['blocked', 'A repair applied, but its safety checks did not pass at the moment of acting.'],
+          ['blocked on approval', 'Someone approved it, but by then things had changed and the plan no longer applied.'],
+          ['failed', 'The fix ran, recovery never showed up within the time allowed, so it was undone.'],
+          ['killed by watchdog', 'Its own supervisor stopped the run for stalling, looping, or spending too much. Whatever it had done so far is kept.'],
         ])}
         <h4>What can go wrong</h4>
         ${dl(
@@ -325,36 +325,36 @@ export function renderRunList(runs: AgentRun[]): string {
     ? `<div class="banner">
          <h3>${held.length} plan${held.length > 1 ? 's' : ''} waiting for a human</h3>
          <p>A channel-wide change is classified T2, which this agent will not make on its own. It
-            diagnosed the fault, chose the runbook, rendered the plan &mdash; and stopped.
+            worked out the cause, chose the repair and wrote the plan, then stopped.
             ${held.map((r) => `<a href="/trace/${esc(r.runId)}">${esc(r.runId)}</a>`).join(' · ')}</p>
        </div>`
     : '';
 
   return page(
-    'AdBreak — money not earned',
+    'AdBreak, money not earned',
     `<header>
-       <div class="eyebrow">AdBreak · revenue SRE for live streaming</div>
-       <h1>A detector for <span class="thin">money the stream never earned.</span></h1>
+       <div class="eyebrow">AdBreak · revenue monitoring for live streaming</div>
+       <h1>Finding ad revenue <span class="thin">that quietly went missing.</span></h1>
        <p class="lede">Ad breaks can fail without anyone noticing. The video keeps playing, every
-         dashboard looks healthy, and some ads simply never run — so the revenue they were meant to
+         dashboard looks healthy, and some ads simply never run, so the revenue they were meant to
          earn quietly disappears.</p>
        <p class="lede">A live stream builds its ad breaks as it goes. The broadcaster marks where a
          break starts, an ad server decides what to play, the stream is rebuilt for each viewer with
          those ads spliced in, and the player reports back what was actually watched. That last
-         report is the thing that gets billed. Break any link in the chain and the picture never
-         falters — the money just stops arriving.</p>
+         report is what gets billed. If any link in that chain breaks, the picture never falters but
+         the money stops arriving.</p>
        <p class="lede">This agent watches for revenue that should have shown up and didn't, works
          out which link failed, and repairs it. <strong>If the fix would change what every viewer on
          the channel sees, it stops and asks a person first.</strong></p>
      </header>
 
      <div class="stats">
-       ${stat('unearned revenue caught', usd(caught), 'money', 'signalled, served, never billed')}
-       ${stat('leak stopped &amp; verified', usd(stoppedLeak), 'good', 'confirmed on live telemetry')}
+       ${stat('unearned revenue found', usd(caught), 'money', 'ads that were served but never billed')}
+       ${stat('of that, since recovered', usd(stoppedLeak), 'good', 'confirmed against live data, not assumed')}
        ${stat('incidents', String(runs.length), '', `${remediated} fixed · ${held.length} held · ${escalated} escalated`)}
-       ${stat('mean time to verified fix', `${meanMttr.toFixed(0)}s`, '', 'bounded by the break cadence')}
-       ${stat('stopped by watchdog', String(stopped), '', 'its own supervisor intervened')}
-       ${stat('cost to run the agent', `$${spend.toFixed(2)}`, 'quiet', 'Vertex AI, all runs')}
+       ${stat('average time to a verified fix', `${meanMttr.toFixed(0)}s`, '', 'limited by how often ad breaks come round')}
+       ${stat('runs it stopped itself', String(stopped), '', 'when a run stalled, looped or overspent')}
+       ${stat('cost of the reasoning', `$${spend.toFixed(2)}`, 'quiet', 'Vertex AI, across every run here')}
      </div>
 
      ${holdBanner}
@@ -366,7 +366,7 @@ export function renderRunList(runs: AgentRun[]): string {
          <thead><tr><th class="m">run</th><th class="m">detected</th><th>device</th><th class="m">cause</th>
            <th class="m">runbook</th><th class="money">unearned</th><th class="wide">what it did</th>
            <th class="n">to fix</th><th class="n">cost</th></tr></thead>
-         <tbody>${rows || '<tr><td colspan="9">No incidents yet — the agent is watching.</td></tr>'}</tbody>
+         <tbody>${rows || '<tr><td colspan="9">No incidents yet, the agent is watching.</td></tr>'}</tbody>
        </table>
      </section>`,
   );
@@ -403,10 +403,10 @@ function summarise(s: StepRecord): string {
         ? 'recovery confirmed on live telemetry'
         : 'recovery NOT observed within the runbook budget';
     case 'rollback':
-      return 'change reverted — the fix did not achieve recovery';
+      return 'change reverted, the fix did not achieve recovery';
     case 'approve':
       return `approved by ${str('approvedBy') || 'a human'}${
-        (o.stale as string[] | undefined)?.length ? ' — but the plan had gone stale' : ''
+        (o.stale as string[] | undefined)?.length ? ', but the plan had gone stale' : ''
       }`;
     case 'document':
       return o.failed === true ? 'write-up failed; the outcome above still stands' : 'incident written up';
@@ -489,8 +489,8 @@ export function renderRun(r: AgentRun): string {
     r.outcome === 'awaiting_approval'
       ? `<div class="banner hold">
            <h3>This plan is waiting for you</h3>
-           <p>The agent classified this change <strong>T2</strong> — it alters what every viewer on
-              the channel is served — so it stopped rather than applying it. The plan, its predicted
+           <p>The agent classified this change <strong>T2</strong>, it alters what every viewer on
+              the channel is served, so it stopped rather than applying it. The plan, its predicted
               impact and its rollback are in the <em>plan</em> step below. Approving re-measures the
               runbook's preconditions against live telemetry first, because the plant has kept
               moving while this waited.</p>
@@ -511,10 +511,10 @@ export function renderRun(r: AgentRun): string {
     }</div>`;
 
   return page(
-    `AdBreak — incident ${r.runId}`,
+    `AdBreak, incident ${r.runId}`,
     `<header>
        <div class="eyebrow"><a href="/trace">all incidents</a> · ${esc(r.runId)}</div>
-       <h1>${esc(failureName(r.failureClass))}<span class="thin"> — on ${esc(
+       <h1>${esc(failureName(r.failureClass))}<span class="thin">, on ${esc(
          r.incident.deviceClass,
        )} in ${esc(r.incident.region)}</span></h1>
        <p class="lede">${outcomePill(r.outcome)} &nbsp; ${esc(meaning)} &middot;
@@ -544,7 +544,7 @@ export function renderRun(r: AgentRun): string {
          'quiet',
          r.runbookId
            ? `${esc(r.runbookId)} · chosen by lookup table, never by the model`
-           : 'nothing safe is mapped to this failure — escalated instead',
+           : 'nothing safe is mapped to this failure, escalated instead',
        )}
        ${stat('blast radius', esc(r.tier ?? '—'), '', esc(r.verdict ?? ''))}
        ${stat('detect→remediate', secs(r.detectedAt, r.remediatedAt), '', 'the part the agent controls')}
@@ -558,9 +558,8 @@ export function renderRun(r: AgentRun): string {
 
      <section>
        <h2>Every step it took</h2>
-       <p class="lede" style="margin:-8px 0 24px">Only the steps marked <em>llm</em> are a model.
-         The runbook is chosen by a lookup table, the blast-radius gate is policy, and the
-         watchdog is arithmetic.</p>
+       <p class="lede" style="margin:-8px 0 24px">Only the steps marked <em>llm</em> use a model. The repair is chosen by a lookup table,
+         the approval rules are fixed policy, and the supervisor is plain arithmetic.</p>
        ${legend()}
        ${steps}
      </section>

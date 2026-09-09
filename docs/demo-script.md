@@ -1,41 +1,34 @@
-# AdBreak demo script — draft 2
+# AdBreak demo script — recorded cut 3
 
-Direction: follow the user's Fabric demo rhythm: question as pitch, concrete action, visible result by 20 seconds, explanation after proof, then a second challenge. The tagged live stream is central. Plain screen recording and human VO; no designed graphics.
-
-The first payoff is detection and localization by second 20 of the edited video. Repair follows within the first minute. Capture the genuine process and cut waiting time; the VO explicitly marks the first time jump. Do not imply real-time detection or recovery within the edited duration.
+This version follows one visible cause-and-effect path. Every technical claim is paired with an interaction or changing runtime surface. The first fault and revenue evidence appear within 20 seconds.
 
 | Time | Voiceover | Screen |
 |---|---|---|
-| 00:00–00:06 | What if your broadcast network could fix its own ad revenue leaks? | Playing stream, with its session parameters visible. |
-| 00:06–00:10 | So, I'll block ad reporting for our Roku viewers. | Execute the prepared F07 injection; return to playback. |
-| 00:10–00:16 | The video keeps playing. Skipping the alert wait, watch what AdBreak catches. | Playback continues; cut to the Roku impression gap and incident. |
-| 00:16–00:20 | There it is. Missing impressions, isolated to Roku. | Incident's dimensional findings identifying Roku. |
-| 00:20–00:29 | The ad played, but its billing report never arrived. A healthy stream can still lose money. | Same tagged stream beside the revenue evidence. |
-| 00:29–00:39 | AdBreak checks the ad server and delivery metrics through Grafana MCP, then tries to disprove its diagnosis before acting. | Actual PromQL, hypothesis, falsify results. |
-| 00:39–00:49 | The checks point to reporting. It selects the approved runbook and switches Roku to server-side reporting. | Plan: T1 ALLOW and measured preconditions. Act: executed patch. |
-| 00:49–00:59 | And after the next complete ad break, impressions are coming through again. The stream kept playing throughout. | Cut forward to verified residual gap zero; show playback from the same test. |
-| 00:59–01:10 | That is AdBreak: an autonomous revenue SRE for broadcast operations, built with Gemini on Vertex AI and Google's Agent Development Kit. | Completed incident, model labels, timing and cost. |
-| 01:10–01:22 | This is our simulated broadcast plant. The live channel takes device, region, and CDN parameters, while 200 synthetic viewers exercise the ad pipeline. | Show device_class=roku, region=us-east, cdn=cdn-east and active fleet count. |
-| 01:22–01:32 | This run repaired the fault in 78 seconds and verified recovery in about four minutes twenty, for roughly two cents in model cost. | Actual figures from run 506d395a; replace together for a fresh run. |
-| 01:32–01:38 | Now, I'll make the ad server stop returning ads. | Begin a separate F04 test; show injection response. |
-| 01:38–01:49 | AdBreak finds the no-fill problem and prepares a fallback. But this change would replace inventory across the channel. | F04 diagnosis, cached-inventory runbook, scope. |
-| 01:49–01:59 | So it stops here. The plan is ready, but nothing executes until an operator approves it. | T2 approval banner and act: executed false. |
-| 01:59–02:09 | Approval rechecks the live conditions first. If the situation has changed while the operator was away, the old plan doesn't get a free pass. | Plan preconditions and approval explanation. Do not click an old historical approval. |
-| 02:09–02:15 | Now, what happens if the agent itself gets stuck? | Begin the separate watchdog loop test. |
-| 02:15–02:26 | Here, we've forced repeated tool calls. Its watchdog catches the loop and stops the run, keeping the evidence it collected. | Watchdog loop reason and retained partial trace. |
-| 02:26–02:37 | Grafana watches the agent too: its latency, model spend, and watchdog interventions. The operator can inspect the system doing the repairs. | Agent Fleet Health panels. |
-| 02:37–02:49 | After a successful repair, AdBreak writes the incident report. The next operator can see what failed, what changed, and how recovery was verified. | Main F07 incident's postmortem and verify step. |
-| 02:49–02:55 | You can inspect the incident traces and try the live channel at the project links. | Working public incident page, then live stream. |
-| 02:55–03:00 | Keep the stream playing. Keep the ad revenue accounted for. | Playing stream and verified recovery result. |
+| 00:00–00:07 | What if your broadcast network could fix its own ad revenue leaks? | The tagged Roku, US East, CDN East channel is visibly playing. |
+| 00:07–00:13 | I’ll block ad reporting for Roku. The stream itself keeps running, so an uptime monitor would call this healthy. | Hover and click **Block Roku reporting**; the deployed plant confirms F07. |
+| 00:13–00:21 | But the revenue telemetry catches the gap. Ads are playing while their billable impressions disappear. | Live Grafana revenue panels update and scroll into the detailed breakdown. |
+| 00:21–00:32 | AdBreak opens an incident, queries delivery and ad-server signals through Grafana MCP, and isolates the failure to Roku reporting. | Open the incident and expand triage, then the dimensional correlation evidence. |
+| 00:32–00:43 | Before it changes anything, the agent tries to kill its own diagnosis. The reporting hypothesis survives those checks. | Expand and scroll through the falsification results. |
+| 00:43–00:56 | It selects the beacon fallback runbook. This change is within the allowed blast radius, so AdBreak switches Roku to server-side reporting. | Open the plan and act steps; the executed POST and `status: 200` are visible. |
+| 00:56–01:08 | Then it waits for a complete ad break and verifies live telemetry. Recovered is true, and the residual impression gap is zero. | Open verify and scroll through the recovery samples. |
+| 01:08–01:14 | The whole diagnosis, action, and verification trail stays attached to the incident. | Collapse back to the completed incident summary. |
+| 01:14–01:22 | And the viewer never lost the broadcast while AdBreak repaired its accounting path. | Return to uninterrupted channel playback. |
+| 01:22–01:34 | Now consider a broader failure: the ad server returns no inventory. AdBreak finds a fallback, but replacing inventory affects the whole region. | Open the F04 incident and expand its proposed plan. |
+| 01:34–01:48 | That crosses the policy boundary. The plan is ready, but the act step says nothing executed until an operator approves it. | Scroll from the T2 approval plan into `executed: false`. |
+| 01:48–01:59 | Approval is not a rubber stamp. AdBreak rechecks live preconditions, and if the situation changed, the old plan is rejected as stale. | Open the approval recheck showing the plan had gone stale. |
+| 01:59–02:05 | There is one more failure mode: the agent itself can get stuck. Here I force a repeated tool loop. | Click **Force agent loop** in the operator console. |
+| 02:05–02:17 | The watchdog sees the same query repeat, terminates the run, and preserves the partial evidence for the operator. | Open the killed run and scroll across the watchdog evidence. |
+| 02:17–02:25 | Grafana monitors the agent too: successful repairs, watchdog interventions, latency, and model spend. | Live Agent Fleet Health panels update and scroll. |
+| 02:25–02:33 | Every successful repair also produces a postmortem with the fault, action, evidence, and prevention steps. | Scroll through the generated NOC postmortem. |
+| 02:33–02:41 | This recorded run repaired the fault in 84 seconds, verified recovery in four minutes ten, and cost roughly two cents. | Return to the measured incident header and timing fields. |
+| 02:41–03:00 | AdBreak is an autonomous revenue SRE built with Gemini on Vertex AI, Google’s Agent Development Kit, and Grafana MCP. Keep the broadcast playing. Keep the ad revenue accounted for. | Finish on the live tagged channel, visibly playing. |
 
-## Recording notes
+## Recording facts
 
-- Parameterized stream target: `https://stream.divagr.com/session/demo/playlist.m3u8?device_class=roku&region=us-east&cdn=cdn-east`. The query tags the session; a browser with that tag is not a physical Roku. Use an HLS-capable player, and keep the selected parameters legible.
-- Browser playback alone does not prove billing. The synthetic fleet has the tracking implementation; pair playback with measured fleet/collector evidence. Do not describe an ordinary HLS player as firing the fleet's beacons unless implemented and verified.
-- F07 success reference: `agent-data/agent-runs/506d395a.json`. Its actual values: 77.6s to remediation, 259.6s to verification, $0.0193 model cost, residual gap 0.
-- F04 hold reference: `agent-data/agent-runs/d1ef1ec8.json`. Watchdog loop reference: `agent-data/agent-runs/c3234b7b.json`.
-- The future-tense live actions in the script require fresh test footage. If using historical records instead, change “I'll” to “In this test, we” and identify the recorded test. Never pair a new injection with an unrelated old recovery as if they were one run.
-- The stream continuity claim requires continuous source footage through the F07 test. Record the whole incident, then cut waits for pacing.
-- Public stream and trace hosts returned Cloudflare 1033 during orientation; local Docker was stopped; Grafana requires browser authentication. Restore access before capture. No capture has been performed.
-- For submission footage use original or organizer-cleared stream content; the rules restrict third-party content. The current README attributes the demo video to Big Buck Bunny.
-- Official rules read 2026-09-09: https://agentic-cinema.devpost.com/rules. Keep final video at or under three minutes and include real runtime Grafana MCP evidence. See demo-plan.md for orientation notes; this draft supersedes its timing and opening.
+- Successful F07 run: `ccff7fff`.
+- Remediation time: 83.5 seconds.
+- Verified recovery: 250.2 seconds.
+- Model cost: $0.0212.
+- Verification result: `recovered: true`, `residualGap: 0`.
+- Parameterized channel: `device_class=roku`, `region=us-east`, `cdn=cdn-east`.
+- Final footage is silent so the narration can be recorded separately.
