@@ -13,3 +13,7 @@ plant/encoder/source/*.mp4
 spike/node_modules/
 spike/events.jsonl
 .deploy-bundle.tar.gz
+
+# Local run history: the agent writes one JSON per incident. Results that
+# matter are published as agent-data/eval-report.md.
+agent-data/agent-runs/
