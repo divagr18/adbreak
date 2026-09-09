@@ -36,6 +36,11 @@ services:
   redis:
     image: redis:7-alpine
     ports: ["6379:6379"]
+    # Without this, a host reboot leaves the cue bus down and the plant signals
+    # no ad breaks at all - the whole chain is silent but every service reports
+    # itself healthy. Found when the deployed VM lost its network and came back
+    # with eleven of thirteen containers running.
+    restart: unless-stopped
 
   encoder:
     build: plant/encoder
@@ -52,6 +57,7 @@ services:
       - ./plant/origin/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports: ["8080:80"]
     depends_on: [encoder]
+    restart: unless-stopped
 
   playout:
     <<: *node-service
