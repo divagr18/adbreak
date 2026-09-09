@@ -36,10 +36,10 @@ const CSS = `
   color-scheme: dark;
 }
 * { box-sizing:border-box; }
-body { background:var(--bg); color:var(--fg); margin:0; padding:0 32px 48px;
+body { background:var(--bg); color:var(--fg); margin:0; padding:0 24px 48px;
   font:14px/1.55 var(--sans); -webkit-font-smoothing:antialiased;
   font-variant-numeric:tabular-nums; }
-.wrap { max-width:1760px; margin:0 auto; }
+.wrap { max-width:1200px; margin:0 auto; }
 
 /* Header: one line of identity, one of orientation. No panel around it. */
 header { padding:28px 0 20px; }
@@ -47,7 +47,7 @@ header { padding:28px 0 20px; }
   text-transform:uppercase; margin-bottom:10px; }
 h1 { font-size:22px; line-height:1.25; letter-spacing:-.018em; margin:0; font-weight:600; }
 h1 .thin { color:var(--fg-2); font-weight:400; }
-.lede { color:var(--fg-2); margin:10px 0 0; max-width:92ch; font-size:13.5px; line-height:1.6; }
+.lede { color:var(--fg-2); margin:12px 0 0; font-size:14px; line-height:1.65; }
 .lede strong { color:var(--fg); font-weight:500; }
 h2 { font-size:11px; margin:0 0 10px; color:var(--fg-3); font-weight:500;
   text-transform:uppercase; letter-spacing:.08em; }
@@ -335,17 +335,15 @@ export function renderRunList(runs: AgentRun[]): string {
     `<header>
        <div class="eyebrow">AdBreak · revenue monitoring for live streaming</div>
        <h1>Finding ad revenue <span class="thin">that quietly went missing.</span></h1>
-       <p class="lede">Ad breaks can fail without anyone noticing. The video keeps playing, every
-         dashboard looks healthy, and some ads simply never run, so the revenue they were meant to
-         earn quietly disappears.</p>
-       <p class="lede">A live stream builds its ad breaks as it goes. The broadcaster marks where a
-         break starts, an ad server decides what to play, the stream is rebuilt for each viewer with
-         those ads spliced in, and the player reports back what was actually watched. That last
-         report is what gets billed. If any link in that chain breaks, the picture never falters but
-         the money stops arriving.</p>
-       <p class="lede">This agent watches for revenue that should have shown up and didn't, works
-         out which link failed, and repairs it. <strong>If the fix would change what every viewer on
-         the channel sees, it stops and asks a person first.</strong></p>
+       <p class="lede">Live ad breaks fail all the time without anyone noticing. The broadcast keeps
+         rolling, everything looks healthy on your end, but an ad server hiccups or a beacon drops,
+         and you miss out on revenue you will never recover.</p>
+       <p class="lede">Because dynamic stitching happens on the fly, there are a lot of ways for the
+         chain to break without the stream crashing. The picture never stumbles, but the billable
+         event is gone.</p>
+       <p class="lede">We built an agent to catch the revenue that should be showing up. It figures
+         out which link in the chain failed and fixes it. <strong>And whenever a fix might affect
+         what viewers actually see, it steps back and asks a human first.</strong></p>
      </header>
 
      <div class="stats">
